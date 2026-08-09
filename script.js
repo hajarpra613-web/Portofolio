@@ -3,7 +3,7 @@
  */
 
 // Google Apps Script Web App URL
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzV4aNZ7w_tCPQADeZGIXR-Hd-kxWbFo-WYx6rKWJ-GAiMi3vq-SADXAxwymJIwTBHW/exec";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxcdlieLa12dQsUJFvF0DzElNPiyxvJk_3xx1wYHtye8TgzukcPBQ9WyvhuYEbK9pk/exec";
 
 // Initial Seed Data
 const DEFAULT_DATA = {
@@ -369,57 +369,62 @@ const syncLoader = document.getElementById('syncLoader');
 const loaderMessage = document.getElementById('loaderMessage');
 const loaderBrandName = document.getElementById('loaderBrandName');
 
-// Sembunyikan loader setelah data siap (gunakan class 'hidden', bukan hapus 'active')
-// Loader sudah visible secara default dari HTML - ini menghilangkan flash of default content
+// Sembunyikan loader (dengan transisi halus)
 function hideSyncLoading() {
   if (!syncLoader) return;
-  // Sedikit delay agar transisi terasa halus
   setTimeout(function() {
     syncLoader.classList.add('hidden');
   }, 180);
 }
 
-// Tampilkan loader saat sync manual (bukan initial load)
+// Tampilkan loader dengan pesan tertentu
 function showSyncLoading(message) {
   if (!syncLoader) return;
-  if (loaderMessage) loaderMessage.innerText = message || 'Sinkronisasi portofolio...';
+  if (loaderMessage) loaderMessage.innerText = message || 'Memuat portofolio...';
   syncLoader.classList.remove('hidden');
   syncLoader.classList.add('active');
 }
 
-// Load data portofolio dari Google Sheets (background sync)
+// Tampilkan loader sebentar saja (maks maxMs milidetik), lalu sembunyikan otomatis
+function showTemporaryLoading(message, maxMs) {
+  maxMs = maxMs || 1500;
+  showSyncLoading(message);
+  setTimeout(hideSyncLoading, maxMs);
+}
+
+// Load data dari Google Sheets sepenuhnya di background
+// Loader TIDAK menunggu fetch selesai — hanya render dari cache dulu
 function loadDataFromGoogleSheets() {
   if (typeof APPS_SCRIPT_URL !== 'undefined' && APPS_SCRIPT_URL) {
-    if (loaderMessage) loaderMessage.innerText = 'Menyinkronkan data terbaru...';
-    console.log("[Portfolio] Menghubungkan ke Google Sheets...");
-    return fetch(APPS_SCRIPT_URL + "?action=read", { mode: 'cors' })
+    console.log("[Portfolio] Memulai sinkronisasi background ke Google Sheets...");
+    fetch(APPS_SCRIPT_URL + "?action=read", { mode: 'cors' })
       .then(function(res) {
-        if (!res.ok) throw new Error('HTTP status ' + res.status);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
         return res.json();
       })
       .then(function(result) {
         if (result && result.profile && Object.keys(result.profile).length > 0) {
-          state.data = result;
-          localStorage.setItem("portfolio_data", JSON.stringify(state.data));
-          console.log("[Portfolio] Sinkronisasi data dari Google Sheets berhasil!");
-          renderProfile();
-          renderGrid();
+          const currentJson = JSON.stringify(state.data);
+          const newJson = JSON.stringify(result);
+          if (currentJson !== newJson) {
+            state.data = result;
+            localStorage.setItem("portfolio_data", JSON.stringify(state.data));
+            console.log("[Portfolio] Data dari Google Sheets diperbarui!");
+            renderProfile();
+            renderGrid();
+          } else {
+            console.log("[Portfolio] Data sudah terbaru, tidak ada perubahan.");
+          }
         } else {
-          console.warn("[Portfolio] Data di Google Sheets kosong, tetap menggunakan data lokal.");
+          console.warn("[Portfolio] Google Sheets kosong, menggunakan data lokal.");
         }
       })
       .catch(function(err) {
-        console.warn("[Portfolio] Gagal sinkronisasi dari Google Sheets, menggunakan data cache/default:", err);
-        showToast('Gagal memuat data dari Google Sheets.', 'error');
-      })
-      .finally(function() {
-        hideSyncLoading();
+        console.warn("[Portfolio] Sinkronisasi background gagal:", err);
       });
   }
-
-  return Promise.resolve().then(function() {
-    hideSyncLoading();
-  });
+  // Selalu kembalikan Promise resolved agar tidak ada blocking
+  return Promise.resolve();
 }
 
 // Lightbox Open/Close
@@ -848,13 +853,14 @@ window.openEditModal = function(id) {
 window.deleteItem = deleteItem;
 window.openLightbox = openLightbox;
 
-// Memeriksa pembaruan data secara berkala dari Google Sheets
-function checkForUpdates(showLoaderIfChanged) {
+// Memeriksa pembaruan data secara berkala dari Google Sheets (background, tanpa blokir UI)
+function checkForUpdates(isBackgroundSync) {
   if (typeof APPS_SCRIPT_URL === 'undefined' || !APPS_SCRIPT_URL) {
-    return Promise.resolve();
+    return;
   }
 
-  return fetch(APPS_SCRIPT_URL + "?action=read", { mode: 'cors' })
+  // Jalankan fetch tanpa return agar tidak ada yang menunggu hasilnya
+  fetch(APPS_SCRIPT_URL + "?action=read", { mode: 'cors' })
     .then(function(res) {
       if (!res.ok) throw new Error('HTTP ' + res.status);
       return res.json();
@@ -864,75 +870,55 @@ function checkForUpdates(showLoaderIfChanged) {
         const currentJson = JSON.stringify(state.data);
         const newJson = JSON.stringify(result);
         if (currentJson !== newJson) {
-          if (showLoaderIfChanged) {
-            showSyncLoading("Pembaruan terdeteksi. Menyinkronkan...");
-          }
           state.data = result;
           localStorage.setItem("portfolio_data", JSON.stringify(state.data));
           renderProfile();
           renderGrid();
-          if (showLoaderIfChanged) {
-            // Berikan sedikit jeda agar transisi loader terasa halus
-            setTimeout(function() {
-              hideSyncLoading();
-              showToast("Portofolio berhasil diperbarui!");
-            }, 800);
+          if (isBackgroundSync) {
+            showToast('✓ Portofolio diperbarui dari server!');
           }
+          console.log('[Portfolio] Data background diperbarui.');
         }
       }
     })
     .catch(function(err) {
-      console.warn("[Portfolio] Gagal memeriksa pembaruan:", err);
+      // Gagal silent — tidak tampilkan error ke pengguna untuk polling background
+      console.warn("[Portfolio] Gagal cek pembaruan background:", err);
     });
 }
 
 // Initial Load & Auto-Sync
-// PENTING: Loader sudah VISIBLE dari HTML secara default
 document.addEventListener("DOMContentLoaded", function() {
   if (!state.data) {
     state.data = DEFAULT_DATA;
   }
-  
-  // Update nama brand di loader sesuai profil (jika ada)
+
+  // Update nama brand di loader sesuai profil
   if (loaderBrandName && state.data.profile && state.data.profile.name &&
       state.data.profile.name !== 'Nama Lengkap Anda') {
     loaderBrandName.innerText = state.data.profile.name.split(' ')[0];
   }
 
-  // Render awal dari cache (cepat, tidak blank)
+  // ===== KUNCI PERBAIKAN =====
+  // 1. Render SEGERA dari cache lokal (tidak perlu menunggu Google Sheets)
   renderProfile();
   renderGrid();
   updateAdminStateUI();
   initSectionObserver();
 
-  // Jaminan loader SELALU disembunyikan dalam 5 detik
-  // Ini mencegah halaman stuck di loading jika Google Sheets lambat/gagal
-  var loaderHidden = false;
-  function safeHideLoader() {
-    if (!loaderHidden) {
-      loaderHidden = true;
-      hideSyncLoading();
-    }
-  }
-  var loaderTimeout = setTimeout(function() {
-    console.warn("[Portfolio] Timeout: loader disembunyikan paksa setelah 5 detik.");
-    safeHideLoader();
-  }, 5000);
+  // 2. Sembunyikan loader maksimal 1.5 detik (tidak menunggu fetch)
+  showTemporaryLoading('Memuat portofolio...', 1500);
 
-  // Ambil data terbaru dari Google Sheets di awal (senyap, tanpa loader blokir)
-  checkForUpdates(false)
-    .finally(function() {
-      clearTimeout(loaderTimeout);
-      safeHideLoader();
-    });
+  // 3. Sinkronisasi Google Sheets berjalan di background (tanpa memblokir UI)
+  loadDataFromGoogleSheets();
 
-  // Polling: Cek pembaruan setiap 15 detik secara berkala
+  // 4. Polling lebih jarang (30 detik) agar tidak membebani server & jaringan
   setInterval(function() {
     checkForUpdates(true);
-  }, 15000);
+  }, 30000);
 
-  // Sync saat tab kembali aktif/difokuskan oleh pengguna
-  window.addEventListener("focus", function() {
+  // 5. Cek pembaruan saat tab difokuskan kembali
+  window.addEventListener('focus', function() {
     checkForUpdates(true);
   });
 });
