@@ -446,9 +446,19 @@ function mergeData(localData, serverData) {
   if (!serverData || !serverData.profile) return localData;
   if (!localData || !localData.profile) return serverData;
 
+  const localTime = new Date(localData.lastSaved || 0).getTime();
+  const serverTime = new Date(serverData.lastSaved || 0).getTime();
+
   // Jika browser ini baru saja mengedit dalam 15 detik terakhir, prioritaskan data lokal sementara
   if (Date.now() - lastLocalEditTime < 15000) {
     console.log('[Portfolio] Menggunakan data lokal (karena baru diedit).');
+    return localData;
+  }
+
+  // Mencegah masalah gambar kembali blur: Jika data lokal lebih baru dari server (misal upload lambat/gagal),
+  // JANGAN timpa data lokal dengan data server yang sudah usang.
+  if (localTime > serverTime) {
+    console.log('[Portfolio] Data lokal lebih baru, mencegah overwrite dari server versi lama.');
     return localData;
   }
 
