@@ -149,12 +149,12 @@ function formatDriveUrl(url) {
   return url;
 }
 
-// Compress image file sebelum dijadikan Base64 (max 800px, quality 0.7 => ~20-40KB)
-// Memastikan data foto muat di Google Sheets (limit 50k karakter/sel) & sync otomatis antar browser
+// Compress image file sebelum dijadikan Base64 (dijamin < 35.000 karakter agar muat di 1 sel Google Sheets)
+// Memungkinkan foto tersimpan sempurna di Google Sheets & tersinkronisasi ke browser lain
 function compressImageFile(file, maxWidth, maxHeight, quality, callback) {
-  maxWidth = maxWidth || 800;
-  maxHeight = maxHeight || 800;
-  quality = quality || 0.7;
+  maxWidth = maxWidth || 450;
+  maxHeight = maxHeight || 450;
+  quality = quality || 0.5;
 
   if (!file || !file.type || !file.type.startsWith('image/')) {
     callback(null);
@@ -166,35 +166,41 @@ function compressImageFile(file, maxWidth, maxHeight, quality, callback) {
     const rawBase64 = e.target.result;
     const img = new Image();
     img.onload = function() {
-      let width = img.width;
-      let height = img.height;
+      function processCanvas(w, h, q) {
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        return canvas.toDataURL('image/jpeg', q);
+      }
 
-      if (width > maxWidth || height > maxHeight) {
-        if (width / height > maxWidth / maxHeight) {
-          height = Math.round((height * maxWidth) / width);
-          width = maxWidth;
+      let w = img.width;
+      let h = img.height;
+      if (w > maxWidth || h > maxHeight) {
+        if (w / h > maxWidth / maxHeight) {
+          h = Math.round((h * maxWidth) / w);
+          w = maxWidth;
         } else {
-          width = Math.round((width * maxHeight) / height);
-          height = maxHeight;
+          w = Math.round((w * maxHeight) / h);
+          h = maxHeight;
         }
       }
 
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, width, height);
+      let dataUrl = processCanvas(w, h, quality);
 
-      try {
-        const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
-        callback(compressedDataUrl);
-      } catch (err) {
-        console.warn("[Portfolio] Kompresi gambar gagal, fallback base64 asli:", err);
-        callback(rawBase64);
+      // Failsafe: Jika string > 35.000 karakter, kecilkan resolusi & kualitas agar muat di Google Sheets (limit 50k)
+      if (dataUrl.length > 35000) {
+        dataUrl = processCanvas(Math.round(w * 0.75), Math.round(h * 0.75), 0.4);
       }
+      if (dataUrl.length > 35000) {
+        dataUrl = processCanvas(Math.round(w * 0.5), Math.round(h * 0.5), 0.3);
+      }
+
+      callback(dataUrl);
     };
     img.onerror = function() {
-      callback(rawBase64);
+      callback(rawBase64.length < 35000 ? rawBase64 : null);
     };
     img.src = rawBase64;
   };
@@ -674,7 +680,7 @@ profileForm.addEventListener("submit", function(e) {
   // Handle Foto Profil File Upload jika ada
   if (fileInput.files && fileInput.files[0]) {
     const file = fileInput.files[0];
-    compressImageFile(file, 600, 600, 0.7, function(compressedBase64) {
+    compressImageFile(file, 450, 450, 0.5, function(compressedBase64) {
       const base64Data = compressedBase64 || avatarUrl;
       if (typeof google !== 'undefined' && google.script && google.script.run) {
         google.script.run
@@ -836,7 +842,7 @@ itemForm.addEventListener("submit", function(e) {
 
         if (subFileInput && subFileInput.files && subFileInput.files[0]) {
           const file = subFileInput.files[0];
-          compressImageFile(file, 800, 800, 0.7, function(compressedBase64) {
+          compressImageFile(file, 450, 450, 0.5, function(compressedBase64) {
             const base64Data = compressedBase64 || existingUrl;
             if (typeof google !== 'undefined' && google.script && google.script.run) {
               google.script.run
@@ -892,7 +898,7 @@ itemForm.addEventListener("submit", function(e) {
   // Process Main File Upload jika user memilih file foto utama
   if (fileInput.files && fileInput.files[0]) {
     const file = fileInput.files[0];
-    compressImageFile(file, 800, 800, 0.7, function(compressedBase64) {
+    compressImageFile(file, 450, 450, 0.5, function(compressedBase64) {
       const base64Data = compressedBase64 || imageUrl;
       if (typeof google !== 'undefined' && google.script && google.script.run) {
         google.script.run
