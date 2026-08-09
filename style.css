@@ -40,7 +40,12 @@ html {
 }
 
 /* ===== LOADING PAGE OVERLAY ===== */
-/* State 'preload': terlihat solid dari awal (saat HTML pertama kali di-parse) */
+/* Auto-hide setelah 2.5 detik via CSS animation — failsafe tanpa JS */
+@keyframes loader-auto-hide {
+  0%, 85%   { opacity: 1; visibility: visible; pointer-events: auto; }
+  100%      { opacity: 0; visibility: hidden;  pointer-events: none; }
+}
+
 .loader-backdrop {
   position: fixed;
   inset: 0;
@@ -53,22 +58,19 @@ html {
   z-index: 9999;
   opacity: 1;
   pointer-events: auto;
-  transition: opacity 0.5s ease, visibility 0.5s ease;
   visibility: visible;
+  /* Fallback CSS: auto-hilang dalam 2.5 detik meski JS gagal */
+  animation: loader-auto-hide 2.5s ease forwards;
+  /* Transisi untuk hide via JS */
+  transition: opacity 0.4s ease, visibility 0.4s ease;
 }
 
-/* State 'hidden': loader selesai, fade-out & hilang */
+/* JS menambahkan class ini untuk menyembunyikan loader lebih cepat */
 .loader-backdrop.hidden {
-  opacity: 0;
-  pointer-events: none;
-  visibility: hidden;
-}
-
-/* State 'active': digunakan untuk sync ulang (bukan initial load) */
-.loader-backdrop.active {
-  opacity: 1;
-  pointer-events: auto;
-  visibility: visible;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  visibility: hidden !important;
+  animation: none !important;
 }
 
 .loader-box {
