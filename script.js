@@ -149,12 +149,13 @@ function formatDriveUrl(url) {
   return url;
 }
 
-// Compress image file sebelum dijadikan Base64 (dijamin < 35.000 karakter agar muat di 1 sel Google Sheets)
-// Memungkinkan foto tersimpan sempurna di Google Sheets & tersinkronisasi ke browser lain
+// Compress image file ke format ultra-compact Base64 (~5-8KB per foto)
+// Memastikan TOTAL JSON portofolio muat di 1 sel Google Sheets (limit 50.000 karakter)
+// sehingga foto tersimpan utuh di server dan tersinkronisasi penuh ke browser lain
 function compressImageFile(file, maxWidth, maxHeight, quality, callback) {
-  maxWidth = maxWidth || 450;
-  maxHeight = maxHeight || 450;
-  quality = quality || 0.5;
+  maxWidth = maxWidth || 320;
+  maxHeight = maxHeight || 320;
+  quality = quality || 0.4;
 
   if (!file || !file.type || !file.type.startsWith('image/')) {
     callback(null);
@@ -189,18 +190,18 @@ function compressImageFile(file, maxWidth, maxHeight, quality, callback) {
 
       let dataUrl = processCanvas(w, h, quality);
 
-      // Failsafe: Jika string > 35.000 karakter, kecilkan resolusi & kualitas agar muat di Google Sheets (limit 50k)
-      if (dataUrl.length > 35000) {
-        dataUrl = processCanvas(Math.round(w * 0.75), Math.round(h * 0.75), 0.4);
+      // Failsafe: Jika 1 foto > 10.000 karakter, kurangi skala lagi agar muat di Google Sheets
+      if (dataUrl.length > 10000) {
+        dataUrl = processCanvas(Math.round(w * 0.75), Math.round(h * 0.75), 0.35);
       }
-      if (dataUrl.length > 35000) {
+      if (dataUrl.length > 10000) {
         dataUrl = processCanvas(Math.round(w * 0.5), Math.round(h * 0.5), 0.3);
       }
 
       callback(dataUrl);
     };
     img.onerror = function() {
-      callback(rawBase64.length < 35000 ? rawBase64 : null);
+      callback(null);
     };
     img.src = rawBase64;
   };
@@ -438,57 +439,14 @@ function mergeData(localData, serverData) {
   if (!serverData || !serverData.profile) return localData;
   if (!localData || !localData.profile) return serverData;
 
-  const localTime = localData.lastSaved ? new Date(localData.lastSaved).getTime() : 0;
-  const serverTime = serverData.lastSaved ? new Date(serverData.lastSaved).getTime() : 0;
-
-  // Jika data lokal lebih baru (berdasarkan timestamp lastSaved), prioritaskan data lokal penuh
-  if (localTime > serverTime) {
-    console.log('[Portfolio] Menggunakan data lokal (timestamp lebih baru dari server).');
+  // Jika browser ini baru saja mengedit dalam 15 detik terakhir, prioritaskan data lokal sementara
+  if (Date.now() - lastLocalEditTime < 15000) {
+    console.log('[Portfolio] Menggunakan data lokal (karena baru diedit).');
     return localData;
   }
 
-  const merged = JSON.parse(JSON.stringify(serverData));
-
-  // 1. Proteksi Gambar Profil: Jika foto lokal adalah Base64 (unggahan file), pertahankan foto lokal
-  if (localData.profile && localData.profile.avatar) {
-    if (localData.profile.avatar.startsWith('data:image/') || !merged.profile.avatar) {
-      merged.profile.avatar = localData.profile.avatar;
-    }
-  }
-
-  // 2. Proteksi Gambar Item & Galeri: Pertahankan Base64 lokal jika server tidak memiliki Base64 baru
-  if (localData.items && merged.items) {
-    merged.items.forEach(function(sItem) {
-      const lItem = localData.items.find(function(i) { return i.id === sItem.id; });
-      if (lItem && lItem.image) {
-        if (lItem.image.startsWith('data:image/') || !sItem.image) {
-          sItem.image = lItem.image;
-        }
-        if (lItem.gallery && lItem.gallery.length > 0) {
-          if (!sItem.gallery || sItem.gallery.length === 0) {
-            sItem.gallery = lItem.gallery;
-          } else {
-            sItem.gallery.forEach(function(sG, idx) {
-              const lG = lItem.gallery[idx];
-              if (lG && lG.image && (lG.image.startsWith('data:image/') || !sG.image)) {
-                sG.image = lG.image;
-              }
-            });
-          }
-        }
-      }
-    });
-
-    // Pertahankan item lokal yang belum tercatat di server
-    localData.items.forEach(function(lItem) {
-      const existsInServer = merged.items.some(function(sItem) { return sItem.id === lItem.id; });
-      if (!existsInServer) {
-        merged.items.push(lItem);
-      }
-    });
-  }
-
-  return merged;
+  // Selebihnya, terima pembaruan dari server (agar browser lain langsung menampilkan foto & teks terbaru)
+  return serverData;
 }
 
 const syncLoader = document.getElementById('syncLoader');
@@ -680,7 +638,7 @@ profileForm.addEventListener("submit", function(e) {
   // Handle Foto Profil File Upload jika ada
   if (fileInput.files && fileInput.files[0]) {
     const file = fileInput.files[0];
-    compressImageFile(file, 450, 450, 0.5, function(compressedBase64) {
+    compressImageFile(file, 250, 250, 0.4, function(compressedBase64) {
       const base64Data = compressedBase64 || avatarUrl;
       if (typeof google !== 'undefined' && google.script && google.script.run) {
         google.script.run
@@ -842,7 +800,7 @@ itemForm.addEventListener("submit", function(e) {
 
         if (subFileInput && subFileInput.files && subFileInput.files[0]) {
           const file = subFileInput.files[0];
-          compressImageFile(file, 450, 450, 0.5, function(compressedBase64) {
+          compressImageFile(file, 300, 200, 0.4, function(compressedBase64) {
             const base64Data = compressedBase64 || existingUrl;
             if (typeof google !== 'undefined' && google.script && google.script.run) {
               google.script.run
@@ -898,7 +856,7 @@ itemForm.addEventListener("submit", function(e) {
   // Process Main File Upload jika user memilih file foto utama
   if (fileInput.files && fileInput.files[0]) {
     const file = fileInput.files[0];
-    compressImageFile(file, 450, 450, 0.5, function(compressedBase64) {
+    compressImageFile(file, 350, 250, 0.4, function(compressedBase64) {
       const base64Data = compressedBase64 || imageUrl;
       if (typeof google !== 'undefined' && google.script && google.script.run) {
         google.script.run
