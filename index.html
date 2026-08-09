@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Portofolio Profesional & Sertifikasi</title>
+  <meta name="description" content="Portofolio interaktif menampilkan pengalaman kerja, magang, serta lisensi & sertifikat profesional.">
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- CSS External -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div id="syncLoader" class="loader-backdrop">
+    <div class="loader-box">
+      <div class="loader-brand">
+        <span class="loader-brand-dot"></span>
+        <span id="loaderBrandName">Portofolio</span>
+      </div>
+      <div class="loader-spinner"></div>
+      <p id="loaderMessage">Memuat portofolio...</p>
+    </div>
+    <div class="loader-progress">
+      <div class="loader-progress-bar"></div>
+    </div>
+  </div>
+
+  <!-- Sticky Navbar -->
+  <nav class="navbar">
+    <div class="container nav-container">
+      <!-- Klik logo 5x cepat atau Ctrl+Shift+A untuk akses admin -->
+      <a href="#" class="nav-brand" id="navBrand" title="">
+        <span class="brand-dot"></span>
+        <span id="navBrandName">Portfolio Saya</span>
+      </a>
+      <div class="nav-links">
+        <a href="#pengalaman" class="nav-link">Pengalaman</a>
+        <a href="#sertifikat" class="nav-link">Sertifikat & Pelatihan</a>
+        <!-- Tombol exit admin: hanya muncul saat admin mode aktif -->
+        <button id="adminExitBtn" style="display:none; background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.4); color:#ef4444; border-radius:999px; padding:6px 14px; font-size:0.8rem; font-weight:600; cursor:pointer; align-items:center; gap:6px;" title="Keluar Mode Admin">
+          <i data-lucide="shield-off" style="width:14px;height:14px;"></i>
+          <span>Keluar Admin</span>
+        </button>
+      </div>
+    </div>
+  </nav>
+  <!-- Badge admin aktif pojok kiri bawah (hanya terlihat admin) -->
+  <div id="adminActiveBadge" style="display:none; position:fixed; bottom:16px; left:16px; z-index:9998; background:rgba(99,102,241,0.15); border:1px solid rgba(99,102,241,0.4); color:#818cf8; padding:6px 14px; border-radius:999px; font-size:0.75rem; font-weight:600; backdrop-filter:blur(10px); pointer-events:none;">
+    🔐 Mode Admin Aktif
+  </div>
+
+  <!-- Hero Profile Section -->
+  <header class="hero">
+    <div class="container">
+      <div class="profile-avatar-wrapper">
+        <img id="profileImage" src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80" alt="Foto Profil" class="profile-avatar">
+        <div id="editAvatarBtn" class="avatar-edit-overlay" style="display: none;" title="Ubah Foto Profil">
+          <i data-lucide="camera" style="width: 18px; height: 18px;"></i>
+        </div>
+      </div>
+
+      <h1 id="profileName" class="hero-name">Nama Lengkap Anda</h1>
+      <p id="profileTitle" class="hero-title">HR Admin & Data Entry Specialist</p>
+      <p id="profileBio" class="hero-bio">
+        Lulusan berdedikasi dengan pengalaman magang di bidang administrasi, pengolahan data, serta manajemen dokumen profesional.
+      </p>
+
+      <div class="hero-actions">
+        <a id="linkedinLink" href="https://linkedin.com" target="_blank" rel="noopener noreferrer" class="social-btn">
+          <i data-lucide="linkedin"></i>
+          <span>LinkedIn</span>
+        </a>
+        <a id="emailLink" href="mailto:email@example.com" class="social-btn">
+          <i data-lucide="mail"></i>
+          <span>Email Saya</span>
+        </a>
+      </div>
+
+      <button id="editProfileBtn" class="btn-add-item admin-only" style="display: none; margin: 20px auto 0;" title="Edit Data Diri & Profil">
+        <i data-lucide="user-check"></i>
+        <span>Edit Profil & Data Diri</span>
+      </button>
+
+      <button id="forceSyncBtn" class="btn-add-item admin-only" style="display: none; margin: 10px auto 0; background: #10b981; color: white;" title="Paksa Sinkronisasi ke Google Sheets">
+        <i data-lucide="refresh-cw"></i>
+        <span>Paksa Sinkronisasi (Save to Sheets)</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Section Pengalaman & Magang -->
+  <section id="pengalaman" class="section">
+    <div class="container">
+      <div class="section-header">
+        <div class="section-title-wrap">
+          <h2>Pengalaman & Magang</h2>
+          <p class="section-subtitle">Dokumentasi kegiatan dan tanggung jawab profesional</p>
+        </div>
+        <button id="addExpBtn" class="btn-add-item admin-only" style="display: none;">
+          <i data-lucide="plus-circle"></i>
+          <span>Tambah Pengalaman</span>
+        </button>
+      </div>
+
+      <div id="pengalamanGrid" class="cards-grid">
+        <!-- Rendered dynamically -->
+      </div>
+    </div>
+  </section>
+
+  <!-- Section Sertifikat, Lisensi & Pelatihan -->
+  <section id="sertifikat" class="section">
+    <div class="container">
+      <div class="section-header">
+        <div class="section-title-wrap">
+          <h2>Sertifikat, Lisensi & Pelatihan</h2>
+          <p class="section-subtitle">Lisensi resmi, sertifikasi & pelatihan yang telah diselesaikan</p>
+        </div>
+        <button id="addCertBtn" class="btn-add-item admin-only" style="display: none;">
+          <i data-lucide="plus-circle"></i>
+          <span>Tambah Sertifikat / Pelatihan</span>
+        </button>
+      </div>
+
+      <div id="sertifikatGrid" class="cards-grid">
+        <!-- Rendered dynamically -->
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container">
+      <p>&copy; 2026 Portofolio Interaktif. All rights reserved.</p>
+      <p style="font-size:0.75rem; color:var(--text-dim); margin-top:4px; opacity:0.4;">v2.0</p>
+    </div>
+  </footer>
+
+  <!-- MODAL: Admin Login -->
+  <div id="loginModal" class="modal-backdrop">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>Login Admin</h3>
+        <button class="btn-close-modal" id="closeLoginModal">&times;</button>
+      </div>
+      <form id="loginForm">
+        <div class="form-group">
+          <label class="form-label" for="adminPin">PIN Admin / Passcode</label>
+          <input type="password" id="adminPin" class="form-control" placeholder="Masukkan PIN (Default: 1234)" required>
+        </div>
+        <button type="submit" class="btn-submit">Masuk Mode Admin</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: Edit Profile -->
+  <div id="profileModal" class="modal-backdrop">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>Edit Data Diri & Profil</h3>
+        <button class="btn-close-modal" id="closeProfileModal">&times;</button>
+      </div>
+      <form id="profileForm">
+        <div class="form-group">
+          <label class="form-label" for="profileNameInput">Nama Lengkap</label>
+          <input type="text" id="profileNameInput" class="form-control" placeholder="Nama Lengkap Anda" required>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="profileTitleInput">Posisi / Judul Pekerjaan</label>
+          <input type="text" id="profileTitleInput" class="form-control" placeholder="mis. HR Admin & Data Entry Specialist" required>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="profileBioInput">Deskripsi Singkat / Biografi</label>
+          <textarea id="profileBioInput" class="form-control" placeholder="Jelaskan ringkasan pengalaman & keahlian Anda..." required></textarea>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Foto Profil</label>
+          <input type="file" id="profileAvatarFileInput" accept="image/*" class="form-control" style="padding: 6px; margin-bottom: 8px;">
+          <p style="font-size: 0.8rem; color: var(--text-dim); margin-bottom: 6px;">Atau tempelkan Link Foto / Google Drive URL:</p>
+          <input type="url" id="profileAvatarUrlInput" class="form-control" placeholder="https://drive.google.com/... atau https://...">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="profileLinkedinInput">Link LinkedIn</label>
+          <input type="url" id="profileLinkedinInput" class="form-control" placeholder="https://linkedin.com/in/username">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="profileEmailInput">Alamat Email</label>
+          <input type="email" id="profileEmailInput" class="form-control" placeholder="nama@email.com">
+        </div>
+
+        <button type="submit" class="btn-submit" id="saveProfileBtn">Simpan Profil</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: Add / Edit Item (Pengalaman & Sertifikat) -->
+  <div id="itemModal" class="modal-backdrop">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3 id="itemModalTitle">Tambah Item Portofolio</h3>
+        <button class="btn-close-modal" id="closeItemModal">&times;</button>
+      </div>
+      <form id="itemForm">
+        <input type="hidden" id="itemId">
+        <input type="hidden" id="itemCategory" value="pengalaman">
+
+        <div class="form-group">
+          <label class="form-label" for="itemTitle">Judul / Posisi / Sertifikat</label>
+          <input type="text" id="itemTitle" class="form-control" placeholder="mis. HR & Admin Staff / Sertifikat Google Data Analytics" required>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="itemSubtitle">Perusahaan / Penerbit</label>
+          <input type="text" id="itemSubtitle" class="form-control" placeholder="mis. PT Digital Indo / Coursera" required>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="itemPeriod">Periode / Tahun</label>
+          <input type="text" id="itemPeriod" class="form-control" placeholder="mis. Jan - Apr 2024 / 2024" required>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Sumber Foto / Gambar HD</label>
+          <div style="display: flex; gap: 10px; margin-bottom: 8px;">
+            <input type="file" id="itemFileInput" accept="image/*" class="form-control" style="padding: 6px;">
+          </div>
+          <p style="font-size: 0.8rem; color: var(--text-dim); margin-bottom: 6px;">Atau tempelkan Link Foto / Google Drive URL:</p>
+          <input type="url" id="itemImageUrl" class="form-control" placeholder="https://drive.google.com/... atau https://...">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="itemDescription">Caption & Sub-penjelasan</label>
+          <textarea id="itemDescription" class="form-control" placeholder="Jelaskan secara singkat tanggung jawab atau pencapaian sertifikat ini..."></textarea>
+        </div>
+
+        <!-- Sub-Foto Tambahan untuk Pengalaman (Sisi Kanan) -->
+        <div id="expGallerySection" style="display: none; border-top: 1px dashed var(--border-color); margin-top: 18px; padding-top: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <label class="form-label" style="margin-bottom: 0;">Galeri Foto Tambahan (Sisi Kanan)</label>
+            <button type="button" id="addSubPhotoBtn" class="btn-card-action edit" style="flex: none; padding: 5px 12px; font-size: 0.8rem;">+ Tambah Foto</button>
+          </div>
+          <div id="subPhotosContainer" style="display: flex; flex-direction: column; gap: 12px;">
+            <!-- Rendered dynamically -->
+          </div>
+        </div>
+
+        <button type="submit" class="btn-submit" id="saveItemBtn">Simpan ke Portofolio</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: Lightbox Zoom Sertifikat / Foto -->
+  <div id="lightboxModal" class="modal-backdrop lightbox-modal">
+    <div class="modal-box">
+      <div class="lightbox-header-bar">
+        <button class="btn-lightbox-back" id="closeLightboxModal">
+          <i data-lucide="arrow-left" style="width: 18px; height: 18px;"></i>
+          <span>Kembali ke Portofolio</span>
+        </button>
+      </div>
+      <img id="lightboxImage" src="" alt="Preview HD" class="lightbox-img">
+      <div id="lightboxCaption" class="lightbox-caption"></div>
+    </div>
+  </div>
+
+  <!-- Include JS dari file script.html -->
+  <script src="script.js"></script>
+  <script>
+    // Initialize Lucide icons
+    lucide.createIcons();
+  </script>
+</body>
+</html>
