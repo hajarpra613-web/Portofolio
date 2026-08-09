@@ -905,11 +905,25 @@ document.addEventListener("DOMContentLoaded", function() {
   updateAdminStateUI();
   initSectionObserver();
 
-  // Ambil data terbaru dari Google Sheets di awal
-  showSyncLoading("Menyinkronkan data terbaru...");
+  // Jaminan loader SELALU disembunyikan dalam 5 detik
+  // Ini mencegah halaman stuck di loading jika Google Sheets lambat/gagal
+  var loaderHidden = false;
+  function safeHideLoader() {
+    if (!loaderHidden) {
+      loaderHidden = true;
+      hideSyncLoading();
+    }
+  }
+  var loaderTimeout = setTimeout(function() {
+    console.warn("[Portfolio] Timeout: loader disembunyikan paksa setelah 5 detik.");
+    safeHideLoader();
+  }, 5000);
+
+  // Ambil data terbaru dari Google Sheets di awal (senyap, tanpa loader blokir)
   checkForUpdates(false)
     .finally(function() {
-      hideSyncLoading();
+      clearTimeout(loaderTimeout);
+      safeHideLoader();
     });
 
   // Polling: Cek pembaruan setiap 15 detik secara berkala
