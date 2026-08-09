@@ -3,7 +3,7 @@
  */
 
 // Google Apps Script Web App URL
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzV4aNZ7w_tCPQADeZGIXR-Hd-kxWbFo-WYx6rKWJ-GAiMi3vq-SADXAxwymJIwTBHW/exec";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxcdlieLa12dQsUJFvF0DzElNPiyxvJk_3xx1wYHtye8TgzukcPBQ9WyvhuYEbK9pk/exec";
 
 // Initial Seed Data
 const DEFAULT_DATA = {
@@ -139,22 +139,28 @@ const profileEmailInput = document.getElementById("profileEmailInput");
 function formatDriveUrl(url) {
   if (!url) return '';
   if (typeof url === 'string' && url.startsWith('data:image/')) return url;
+
+  let fileId = null;
   if (url.includes('drive.google.com') && url.includes('id=')) {
-    const fileId = url.split('id=')[1].split('&')[0];
-    return 'https://lh3.googleusercontent.com/d/' + fileId;
+    fileId = url.split('id=')[1].split('&')[0];
   } else if (url.includes('drive.google.com/file/d/')) {
-    const fileId = url.split('/file/d/')[1].split('/')[0];
-    return 'https://lh3.googleusercontent.com/d/' + fileId;
+    fileId = url.split('/file/d/')[1].split('/')[0];
+  } else if (url.includes('lh3.googleusercontent.com/d/')) {
+    fileId = url.split('lh3.googleusercontent.com/d/')[1].split('=')[0];
+  }
+
+  if (fileId) {
+    // Menambahkan parameter =w1600 agar Google Drive menyajikan gambar resolusi HD (1600px) bukan thumbnail buram
+    return 'https://lh3.googleusercontent.com/d/' + fileId + '=w1600';
   }
   return url;
 }
 
-// Compress image file dengan resolusi tinggi & kualitas HD (sampai 1200px @ 0.8 quality)
-// Menghasilkan gambar tajam dan jelas di semua layar (termasuk Lightbox & Layar HP/Monitor Retina)
+// Compress image file dengan kualitas HD & proteksi kualitas gambar asli
 function compressImageFile(file, maxWidth, maxHeight, quality, callback) {
-  maxWidth = maxWidth || 1200;
-  maxHeight = maxHeight || 1200;
-  quality = quality || 0.8;
+  maxWidth = maxWidth || 2000;
+  maxHeight = maxHeight || 2000;
+  quality = quality || 0.9;
 
   if (!file || !file.type || !file.type.startsWith('image/')) {
     callback(null);
@@ -164,6 +170,14 @@ function compressImageFile(file, maxWidth, maxHeight, quality, callback) {
   const reader = new FileReader();
   reader.onload = function(e) {
     const rawBase64 = e.target.result;
+
+    // Jika ukuran file gambar di bawah 1.5 MB, gunakan 100% file asli tanpa kompresi canvas
+    // Ini menjamin gambar yang di-upload tampil 100% jernih, tajam & tidak ada penurunan kualitas sama sekali!
+    if (file.size && file.size < 1500000) {
+      callback(rawBase64);
+      return;
+    }
+
     const img = new Image();
     img.onload = function() {
       function processCanvas(w, h, q) {
@@ -174,7 +188,7 @@ function compressImageFile(file, maxWidth, maxHeight, quality, callback) {
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(img, 0, 0, w, h);
-        return canvas.toDataURL('image/jpeg', q);
+        return canvas.toDataURL(file.type === 'image/png' ? 'image/png' : 'image/jpeg', q);
       }
 
       let w = img.width;
@@ -190,17 +204,10 @@ function compressImageFile(file, maxWidth, maxHeight, quality, callback) {
       }
 
       let dataUrl = processCanvas(w, h, quality);
-
-      // Failsafe: Jika ukuran file gambar asli sangat raksasa (> 2.500.000 karakter ~1.8MB Base64),
-      // sesuaikan sedikit ke 80% skala agar tetap sangat efisien tanpa mengurangi ketajaman visual.
-      if (dataUrl.length > 2500000) {
-        dataUrl = processCanvas(Math.round(w * 0.8), Math.round(h * 0.8), 0.75);
-      }
-
       callback(dataUrl);
     };
     img.onerror = function() {
-      callback(null);
+      callback(rawBase64);
     };
     img.src = rawBase64;
   };
