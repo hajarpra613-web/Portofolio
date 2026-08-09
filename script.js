@@ -132,9 +132,10 @@ const profileAvatarUrlInput = document.getElementById("profileAvatarUrlInput");
 const profileLinkedinInput = document.getElementById("profileLinkedinInput");
 const profileEmailInput = document.getElementById("profileEmailInput");
 
-// Helper untuk Google Drive View Link Conversion
+// Helper untuk Google Drive View Link Conversion & Base64 handling
 function formatDriveUrl(url) {
   if (!url) return '';
+  if (typeof url === 'string' && url.startsWith('data:image/')) return url;
   if (url.includes('drive.google.com') && url.includes('id=')) {
     const fileId = url.split('id=')[1].split('&')[0];
     return 'https://lh3.googleusercontent.com/d/' + fileId;
@@ -143,6 +144,61 @@ function formatDriveUrl(url) {
     return 'https://lh3.googleusercontent.com/d/' + fileId;
   }
   return url;
+}
+
+// Compress image file sebelum dijadikan Base64 (max 800px, quality 0.7 => ~20-40KB)
+// Memastikan data foto muat di Google Sheets (limit 50k karakter/sel) & sync otomatis antar browser
+function compressImageFile(file, maxWidth, maxHeight, quality, callback) {
+  maxWidth = maxWidth || 800;
+  maxHeight = maxHeight || 800;
+  quality = quality || 0.7;
+
+  if (!file || !file.type || !file.type.startsWith('image/')) {
+    callback(null);
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const rawBase64 = e.target.result;
+    const img = new Image();
+    img.onload = function() {
+      let width = img.width;
+      let height = img.height;
+
+      if (width > maxWidth || height > maxHeight) {
+        if (width / height > maxWidth / maxHeight) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        } else {
+          width = Math.round((width * maxHeight) / height);
+          height = maxHeight;
+        }
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+
+      try {
+        const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
+        callback(compressedDataUrl);
+      } catch (err) {
+        console.warn("[Portfolio] Kompresi gambar gagal, fallback base64 asli:", err);
+        callback(rawBase64);
+      }
+    };
+    img.onerror = function() {
+      callback(rawBase64);
+    };
+    img.src = rawBase64;
+  };
+  reader.onerror = function() {
+    callback(null);
+  };
+  reader.readAsDataURL(file);
 }
 
 // Render Header & Profile Data
@@ -559,24 +615,22 @@ profileForm.addEventListener("submit", function(e) {
   // Handle Foto Profil File Upload jika ada
   if (fileInput.files && fileInput.files[0]) {
     const file = fileInput.files[0];
-    const reader = new FileReader();
-    reader.onload = function(ev) {
-      const base64Data = ev.target.result;
+    compressImageFile(file, 600, 600, 0.7, function(compressedBase64) {
+      const base64Data = compressedBase64 || avatarUrl;
       if (typeof google !== 'undefined' && google.script && google.script.run) {
         google.script.run
           .withSuccessHandler(function(driveUrl) {
             finishSaveProfile(driveUrl);
           })
           .withFailureHandler(function(err) {
-            console.warn("Drive upload profile failed, using base64 fallback:", err);
+            console.warn("Drive upload profile failed, using compressed base64 fallback:", err);
             finishSaveProfile(base64Data);
           })
           .uploadFileToDrive(base64Data, file.name, { category: "profile", title: newName });
       } else {
         finishSaveProfile(base64Data);
       }
-    };
-    reader.readAsDataURL(file);
+    });
     return;
   }
 
@@ -723,9 +777,8 @@ itemForm.addEventListener("submit", function(e) {
 
         if (subFileInput && subFileInput.files && subFileInput.files[0]) {
           const file = subFileInput.files[0];
-          const reader = new FileReader();
-          reader.onload = function(ev) {
-            const base64Data = ev.target.result;
+          compressImageFile(file, 800, 800, 0.7, function(compressedBase64) {
+            const base64Data = compressedBase64 || existingUrl;
             if (typeof google !== 'undefined' && google.script && google.script.run) {
               google.script.run
                 .withSuccessHandler(function(driveUrl) {
@@ -739,8 +792,7 @@ itemForm.addEventListener("submit", function(e) {
             } else {
               resolve({ image: base64Data, caption: caption });
             }
-          };
-          reader.readAsDataURL(file);
+          });
         } else if (existingUrl) {
           resolve({ image: existingUrl, caption: caption });
         } else {
@@ -781,9 +833,8 @@ itemForm.addEventListener("submit", function(e) {
   // Process Main File Upload jika user memilih file foto utama
   if (fileInput.files && fileInput.files[0]) {
     const file = fileInput.files[0];
-    const reader = new FileReader();
-    reader.onload = function(ev) {
-      const base64Data = ev.target.result;
+    compressImageFile(file, 800, 800, 0.7, function(compressedBase64) {
+      const base64Data = compressedBase64 || imageUrl;
       if (typeof google !== 'undefined' && google.script && google.script.run) {
         google.script.run
           .withSuccessHandler(function(driveUrl) {
@@ -797,8 +848,7 @@ itemForm.addEventListener("submit", function(e) {
       } else {
         handleFinish(base64Data);
       }
-    };
-    reader.readAsDataURL(file);
+    });
     return;
   }
 
