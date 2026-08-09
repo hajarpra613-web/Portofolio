@@ -9,6 +9,20 @@
   <script src="https://unpkg.com/lucide@latest"></script>
   <!-- CSS External -->
   <link rel="stylesheet" href="style.css">
+  <!-- Inline style: jaminan loader selalu hilang (tidak bergantung cache) -->
+  <style>
+    @keyframes _loader_hide {
+      0%, 80% { opacity: 1; }
+      100%    { opacity: 0; pointer-events: none; visibility: hidden; }
+    }
+    #syncLoader {
+      animation: _loader_hide 2s ease forwards !important;
+    }
+    #syncLoader.hidden {
+      display: none !important;
+      animation: none !important;
+    }
+  </style>
 </head>
 <body>
 
@@ -25,6 +39,28 @@
       <div class="loader-progress-bar"></div>
     </div>
   </div>
+  <!-- Inline script: paksa loader hilang dalam 2 detik (failsafe utama) -->
+  <script>
+    (function() {
+      var MAX_MS = 2000;
+      function forceHideLoader() {
+        var el = document.getElementById('syncLoader');
+        if (el) {
+          el.style.cssText = 'display:none !important; opacity:0 !important; visibility:hidden !important; pointer-events:none !important;';
+        }
+      }
+      // Fallback 1: setelah 2 detik
+      setTimeout(forceHideLoader, MAX_MS);
+      // Fallback 2: saat DOM siap (biasanya jauh lebih cepat)
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function() {
+          setTimeout(forceHideLoader, 400);
+        });
+      } else {
+        setTimeout(forceHideLoader, 400);
+      }
+    })();
+  </script>
 
   <!-- Sticky Navbar -->
   <nav class="navbar">
