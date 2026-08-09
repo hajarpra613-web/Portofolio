@@ -319,6 +319,7 @@ function showToast(message, type) {
 }
 
 // Storage Save Handler (LocalStorage & Google Sheets Sync)
+// TIDAK menampilkan loader — hanya simpan & kirim di background
 function saveData() {
   state.data.lastSaved = new Date().toISOString();
 
@@ -330,37 +331,38 @@ function saveData() {
     showToast('Gagal menyimpan data. Storage penuh?', 'error');
     return;
   }
-  
+
   // Jika berjalan di lingkungan Google Apps Script
   if (typeof google !== 'undefined' && google.script && google.script.run) {
     google.script.run
-      .withSuccessHandler(function() { console.log("Data berhasil disinkronkan ke Google Sheets via GAS!"); })
-      .withFailureHandler(function(err) { console.error("Gagal sync GAS:", err); })
+      .withSuccessHandler(function() {
+        console.log("Data berhasil disinkronkan ke Google Sheets via GAS!");
+        showToast('✓ Tersimpan ke Google Sheets!');
+      })
+      .withFailureHandler(function(err) {
+        console.error("Gagal sync GAS:", err);
+        showToast('Gagal sync ke Google Sheets.', 'error');
+      })
       .savePortfolioDataToSheet(state.data);
     return;
   }
 
-  // Jika berjalan di web external (misal GitHub Pages)
+  // Jika berjalan di web external (GitHub Pages) — fire and forget (no-cors)
   if (typeof APPS_SCRIPT_URL !== 'undefined' && APPS_SCRIPT_URL) {
     fetch(APPS_SCRIPT_URL, {
       method: "POST",
       mode: "no-cors",
-      headers: {
-        "Content-Type": "text/plain;charset=utf-8"
-      },
-      body: JSON.stringify({
-        action: "savePortfolio",
-        data: state.data
-      })
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ action: "savePortfolio", data: state.data })
     })
     .then(function() {
-      // mode 'no-cors' always returns an opaque response (status 0), so we assume success if no network error
-      console.log("[Portfolio] Permintaan POST dikirim (no-cors).");
-      showToast('Berhasil sinkronisasi ke Google Sheets!');
+      // no-cors selalu opaque response — anggap sukses jika tidak ada network error
+      console.log("[Portfolio] Data terkirim ke Google Sheets (no-cors).");
+      showToast('✓ Tersimpan & dikirim ke Google Sheets!');
     })
     .catch(function(err) {
-      console.warn("[Portfolio] Gagal sync via POST:", err);
-      showToast('Gagal sinkronisasi jaringan.', 'error');
+      console.warn("[Portfolio] Gagal kirim POST:", err);
+      showToast('Tersimpan lokal, gagal kirim ke server.', 'error');
     });
   }
 }
@@ -853,13 +855,11 @@ window.openEditModal = function(id) {
 window.deleteItem = deleteItem;
 window.openLightbox = openLightbox;
 
-// Memeriksa pembaruan data secara berkala dari Google Sheets (background, tanpa blokir UI)
+// Memeriksa pembaruan data dari Google Sheets di background (TANPA loader, TANPA blokir UI)
 function checkForUpdates(isBackgroundSync) {
-  if (typeof APPS_SCRIPT_URL === 'undefined' || !APPS_SCRIPT_URL) {
-    return;
-  }
+  if (typeof APPS_SCRIPT_URL === 'undefined' || !APPS_SCRIPT_URL) return;
 
-  // Jalankan fetch tanpa return agar tidak ada yang menunggu hasilnya
+  // Fire and forget — tidak ada yang menunggu hasilnya, loader TIDAK ditampilkan
   fetch(APPS_SCRIPT_URL + "?action=read", { mode: 'cors' })
     .then(function(res) {
       if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -870,20 +870,24 @@ function checkForUpdates(isBackgroundSync) {
         const currentJson = JSON.stringify(state.data);
         const newJson = JSON.stringify(result);
         if (currentJson !== newJson) {
+          // Ada data baru — perbarui tampilan diam-diam
           state.data = result;
           localStorage.setItem("portfolio_data", JSON.stringify(state.data));
           renderProfile();
           renderGrid();
           if (isBackgroundSync) {
-            showToast('✓ Portofolio diperbarui dari server!');
+            // Toast kecil saja — tidak ada loader
+            showToast('✓ Portofolio diperbarui!');
           }
-          console.log('[Portfolio] Data background diperbarui.');
+          console.log('[Portfolio] Data diperbarui dari Google Sheets.');
+        } else {
+          console.log('[Portfolio] Tidak ada perubahan data.');
         }
       }
     })
     .catch(function(err) {
-      // Gagal silent — tidak tampilkan error ke pengguna untuk polling background
-      console.warn("[Portfolio] Gagal cek pembaruan background:", err);
+      // Gagal silent — tidak ganggu pengguna dengan error saat polling background
+      console.warn("[Portfolio] Gagal cek pembaruan:", err);
     });
 }
 
@@ -899,25 +903,25 @@ document.addEventListener("DOMContentLoaded", function() {
     loaderBrandName.innerText = state.data.profile.name.split(' ')[0];
   }
 
-  // ===== KUNCI PERBAIKAN =====
-  // 1. Render SEGERA dari cache lokal (tidak perlu menunggu Google Sheets)
+  // LANGKAH 1: Render SEGERA dari cache lokal (tidak menunggu Google Sheets)
   renderProfile();
   renderGrid();
   updateAdminStateUI();
   initSectionObserver();
 
-  // 2. Sembunyikan loader maksimal 1.5 detik (tidak menunggu fetch)
+  // LANGKAH 2: Sembunyikan loader dalam 1.5 detik (tidak bergantung pada fetch)
   showTemporaryLoading('Memuat portofolio...', 1500);
 
-  // 3. Sinkronisasi Google Sheets berjalan di background (tanpa memblokir UI)
+  // LANGKAH 3: Sinkronisasi awal dari Google Sheets di background (diam-diam)
   loadDataFromGoogleSheets();
 
-  // 4. Polling lebih jarang (30 detik) agar tidak membebani server & jaringan
+  // LANGKAH 4: Polling ringan setiap 10 detik agar browser lain juga ikut update
+  // (tidak ada loader saat polling — hanya toast jika ada perubahan)
   setInterval(function() {
     checkForUpdates(true);
-  }, 30000);
+  }, 10000);
 
-  // 5. Cek pembaruan saat tab difokuskan kembali
+  // LANGKAH 5: Cek pembaruan segera saat tab kembali difokuskan
   window.addEventListener('focus', function() {
     checkForUpdates(true);
   });
