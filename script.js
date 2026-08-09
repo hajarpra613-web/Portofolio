@@ -86,6 +86,9 @@ let state = {
   data: null
 };
 
+// Tracking waktu editan lokal terakhir untuk proteksi overwrite
+let lastLocalEditTime = 0;
+
 if (savedStateJson) {
   try {
     state.data = JSON.parse(savedStateJson);
@@ -377,6 +380,7 @@ function showToast(message, type) {
 // Storage Save Handler (LocalStorage & Google Sheets Sync)
 // TIDAK menampilkan loader — hanya simpan & kirim di background
 function saveData() {
+  lastLocalEditTime = Date.now();
   state.data.lastSaved = new Date().toISOString();
 
   try {
@@ -423,6 +427,54 @@ function saveData() {
   }
 }
 
+// Smart Merge Data dari Server dengan Data Lokal
+function mergeData(localData, serverData) {
+  if (!serverData || !serverData.profile) return localData;
+  if (!localData || !localData.profile) return serverData;
+
+  const localTime = localData.lastSaved ? new Date(localData.lastSaved).getTime() : 0;
+  const serverTime = serverData.lastSaved ? new Date(serverData.lastSaved).getTime() : 0;
+
+  // Jika lokal baru diedit dalam 15 detik terakhir ATAU timestamp lokal lebih baru, utamakan data lokal
+  if ((Date.now() - lastLocalEditTime < 15000) || localTime > serverTime) {
+    console.log('[Portfolio] Menggunakan data lokal (lebih baru dari server).');
+    return localData;
+  }
+
+  const merged = JSON.parse(JSON.stringify(serverData));
+
+  // Proteksi Gambar Profil: Jika server tidak punya avatar tapi lokal punya (Base64), pertahankan lokal
+  if ((!merged.profile.avatar || merged.profile.avatar.includes('unsplash')) && localData.profile.avatar && localData.profile.avatar.startsWith('data:image/')) {
+    merged.profile.avatar = localData.profile.avatar;
+  }
+
+  // Proteksi Gambar Item & Galeri: Pertahankan Base64 lokal jika server kosong/default
+  if (localData.items && merged.items) {
+    merged.items.forEach(function(sItem) {
+      const lItem = localData.items.find(function(i) { return i.id === sItem.id; });
+      if (lItem) {
+        if ((!sItem.image || sItem.image.includes('unsplash')) && lItem.image && lItem.image.startsWith('data:image/')) {
+          sItem.image = lItem.image;
+        }
+        if (lItem.gallery && lItem.gallery.length > 0) {
+          if (!sItem.gallery || sItem.gallery.length === 0) {
+            sItem.gallery = lItem.gallery;
+          } else {
+            sItem.gallery.forEach(function(sG, idx) {
+              const lG = lItem.gallery[idx];
+              if (lG && (!sG.image || sG.image.includes('unsplash')) && lG.image && lG.image.startsWith('data:image/')) {
+                sG.image = lG.image;
+              }
+            });
+          }
+        }
+      }
+    });
+  }
+
+  return merged;
+}
+
 const syncLoader = document.getElementById('syncLoader');
 const loaderMessage = document.getElementById('loaderMessage');
 const loaderBrandName = document.getElementById('loaderBrandName');
@@ -433,8 +485,6 @@ function hideSyncLoading() {
   syncLoader.classList.add('hidden');
 }
 
-// Tidak digunakan lagi — loader auto-hide via CSS animation
-// Dibiarkan untuk kompatibilitas jika ada kode lain memanggilnya
 function showSyncLoading(message) {
   if (!syncLoader) return;
   syncLoader.classList.remove('hidden');
@@ -445,7 +495,6 @@ function showTemporaryLoading(message, maxMs) {
 }
 
 // Load data dari Google Sheets sepenuhnya di background
-// Loader TIDAK menunggu fetch selesai — hanya render dari cache dulu
 function loadDataFromGoogleSheets() {
   if (typeof APPS_SCRIPT_URL !== 'undefined' && APPS_SCRIPT_URL) {
     console.log("[Portfolio] Memulai sinkronisasi background ke Google Sheets...");
@@ -456,10 +505,11 @@ function loadDataFromGoogleSheets() {
       })
       .then(function(result) {
         if (result && result.profile && Object.keys(result.profile).length > 0) {
+          const mergedData = mergeData(state.data, result);
           const currentJson = JSON.stringify(state.data);
-          const newJson = JSON.stringify(result);
-          if (currentJson !== newJson) {
-            state.data = result;
+          const mergedJson = JSON.stringify(mergedData);
+          if (currentJson !== mergedJson) {
+            state.data = mergedData;
             localStorage.setItem("portfolio_data", JSON.stringify(state.data));
             console.log("[Portfolio] Data dari Google Sheets diperbarui!");
             renderProfile();
@@ -475,7 +525,6 @@ function loadDataFromGoogleSheets() {
         console.warn("[Portfolio] Sinkronisasi background gagal:", err);
       });
   }
-  // Selalu kembalikan Promise resolved agar tidak ada blocking
   return Promise.resolve();
 }
 
@@ -903,6 +952,12 @@ window.openLightbox = openLightbox;
 function checkForUpdates(isBackgroundSync) {
   if (typeof APPS_SCRIPT_URL === 'undefined' || !APPS_SCRIPT_URL) return;
 
+  // Jika baru saja ada editan lokal dalam 15 detik terakhir, tunda dulu fetch dari server
+  if (Date.now() - lastLocalEditTime < 15000) {
+    console.log("[Portfolio] Menunda sync dari server karena ada editan lokal baru.");
+    return;
+  }
+
   fetch(APPS_SCRIPT_URL + "?action=read", { mode: 'cors' })
     .then(function(res) {
       if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -910,10 +965,11 @@ function checkForUpdates(isBackgroundSync) {
     })
     .then(function(result) {
       if (result && result.profile && Object.keys(result.profile).length > 0) {
+        const mergedData = mergeData(state.data, result);
         const currentJson = JSON.stringify(state.data);
-        const newJson = JSON.stringify(result);
-        if (currentJson !== newJson) {
-          state.data = result;
+        const mergedJson = JSON.stringify(mergedData);
+        if (currentJson !== mergedJson) {
+          state.data = mergedData;
           localStorage.setItem("portfolio_data", JSON.stringify(state.data));
           renderProfile();
           renderGrid();
@@ -950,7 +1006,6 @@ document.addEventListener("DOMContentLoaded", function() {
   initSectionObserver();
 
   // LANGKAH 2: Sembunyikan loader via JS setelah render selesai
-  // CSS animation sudah jadi failsafe (2.5 detik) — ini mempercepat jadi ~300ms
   setTimeout(function() {
     hideSyncLoading();
   }, 300);
@@ -968,4 +1023,5 @@ document.addEventListener("DOMContentLoaded", function() {
     checkForUpdates(true);
   });
 });
+
 
