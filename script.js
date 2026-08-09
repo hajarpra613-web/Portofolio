@@ -416,7 +416,8 @@ function saveData() {
 
   // Jika berjalan di web external (GitHub Pages) — fire and forget (no-cors)
   if (typeof APPS_SCRIPT_URL !== 'undefined' && APPS_SCRIPT_URL) {
-    fetch(APPS_SCRIPT_URL, {
+    const saveUrl = APPS_SCRIPT_URL + (APPS_SCRIPT_URL.includes('?') ? '&' : '?') + 'action=savePortfolio';
+    fetch(saveUrl, {
       method: "POST",
       mode: "no-cors",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
