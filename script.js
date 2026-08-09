@@ -435,25 +435,27 @@ function mergeData(localData, serverData) {
   const localTime = localData.lastSaved ? new Date(localData.lastSaved).getTime() : 0;
   const serverTime = serverData.lastSaved ? new Date(serverData.lastSaved).getTime() : 0;
 
-  // Jika lokal baru diedit dalam 15 detik terakhir ATAU timestamp lokal lebih baru, utamakan data lokal
-  if ((Date.now() - lastLocalEditTime < 15000) || localTime > serverTime) {
-    console.log('[Portfolio] Menggunakan data lokal (lebih baru dari server).');
+  // Jika data lokal lebih baru (berdasarkan timestamp lastSaved), prioritaskan data lokal penuh
+  if (localTime > serverTime) {
+    console.log('[Portfolio] Menggunakan data lokal (timestamp lebih baru dari server).');
     return localData;
   }
 
   const merged = JSON.parse(JSON.stringify(serverData));
 
-  // Proteksi Gambar Profil: Jika server tidak punya avatar tapi lokal punya (Base64), pertahankan lokal
-  if ((!merged.profile.avatar || merged.profile.avatar.includes('unsplash')) && localData.profile.avatar && localData.profile.avatar.startsWith('data:image/')) {
-    merged.profile.avatar = localData.profile.avatar;
+  // 1. Proteksi Gambar Profil: Jika foto lokal adalah Base64 (unggahan file), pertahankan foto lokal
+  if (localData.profile && localData.profile.avatar) {
+    if (localData.profile.avatar.startsWith('data:image/') || !merged.profile.avatar) {
+      merged.profile.avatar = localData.profile.avatar;
+    }
   }
 
-  // Proteksi Gambar Item & Galeri: Pertahankan Base64 lokal jika server kosong/default
+  // 2. Proteksi Gambar Item & Galeri: Pertahankan Base64 lokal jika server tidak memiliki Base64 baru
   if (localData.items && merged.items) {
     merged.items.forEach(function(sItem) {
       const lItem = localData.items.find(function(i) { return i.id === sItem.id; });
-      if (lItem) {
-        if ((!sItem.image || sItem.image.includes('unsplash')) && lItem.image && lItem.image.startsWith('data:image/')) {
+      if (lItem && lItem.image) {
+        if (lItem.image.startsWith('data:image/') || !sItem.image) {
           sItem.image = lItem.image;
         }
         if (lItem.gallery && lItem.gallery.length > 0) {
@@ -462,12 +464,20 @@ function mergeData(localData, serverData) {
           } else {
             sItem.gallery.forEach(function(sG, idx) {
               const lG = lItem.gallery[idx];
-              if (lG && (!sG.image || sG.image.includes('unsplash')) && lG.image && lG.image.startsWith('data:image/')) {
+              if (lG && lG.image && (lG.image.startsWith('data:image/') || !sG.image)) {
                 sG.image = lG.image;
               }
             });
           }
         }
+      }
+    });
+
+    // Pertahankan item lokal yang belum tercatat di server
+    localData.items.forEach(function(lItem) {
+      const existsInServer = merged.items.some(function(sItem) { return sItem.id === lItem.id; });
+      if (!existsInServer) {
+        merged.items.push(lItem);
       }
     });
   }
@@ -658,7 +668,7 @@ profileForm.addEventListener("submit", function(e) {
     saveData();
     renderProfile();
     profileModal.classList.remove("active");
-    alert("Profil & Data Diri berhasil diperbarui!");
+    showToast('✓ Profil & Data Diri berhasil diperbarui!');
   }
 
   // Handle Foto Profil File Upload jika ada
