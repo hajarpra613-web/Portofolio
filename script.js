@@ -3,7 +3,7 @@
  */
 
 // Google Apps Script Web App URL
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxcdlieLa12dQsUJFvF0DzElNPiyxvJk_3xx1wYHtye8TgzukcPBQ9WyvhuYEbK9pk/exec";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzV4aNZ7w_tCPQADeZGIXR-Hd-kxWbFo-WYx6rKWJ-GAiMi3vq-SADXAxwymJIwTBHW/exec";
 
 // Initial Seed Data
 const DEFAULT_DATA = {
