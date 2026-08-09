@@ -3,7 +3,7 @@
  */
 
 // Google Apps Script Web App URL
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzV4aNZ7w_tCPQADeZGIXR-Hd-kxWbFo-WYx6rKWJ-GAiMi3vq-SADXAxwymJIwTBHW/exec";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxcdlieLa12dQsUJFvF0DzElNPiyxvJk_3xx1wYHtye8TgzukcPBQ9WyvhuYEbK9pk/exec";
 
 // Initial Seed Data
 const DEFAULT_DATA = {
@@ -848,65 +848,77 @@ window.openEditModal = function(id) {
 window.deleteItem = deleteItem;
 window.openLightbox = openLightbox;
 
-// Initial Load
-// PENTING: Loader sudah VISIBLE dari HTML secara default (tidak transparan)
-// Ini mencegah flash of default content - konten tersembunyi di balik loader
-document.addEventListener("DOMContentLoaded", function() {
-
-  function renderApp() {
-    if (!state.data) {
-      state.data = DEFAULT_DATA;
-    }
-    // Update nama brand di loader sesuai profil (jika ada di cache)
-    if (loaderBrandName && state.data.profile && state.data.profile.name &&
-        state.data.profile.name !== 'Nama Lengkap Anda') {
-      loaderBrandName.innerText = state.data.profile.name.split(' ')[0];
-    }
-    renderProfile();
-    renderGrid();
-    updateAdminStateUI();
-    initSectionObserver();
+// Memeriksa pembaruan data secara berkala dari Google Sheets
+function checkForUpdates(showLoaderIfChanged) {
+  if (typeof APPS_SCRIPT_URL === 'undefined' || !APPS_SCRIPT_URL) {
+    return Promise.resolve();
   }
 
-  if (state.data) {
-    // ADA CACHE: Render langsung dari localStorage (cepat, tidak ada flash)
-    // Sembunyikan loader segera setelah render selesai
-    renderApp();
-    hideSyncLoading();
-    // Sync background dari Google Sheets (senyap, tanpa loader)
-    // Jika ada data baru, update konten tanpa menampilkan loader
-    if (typeof APPS_SCRIPT_URL !== 'undefined' && APPS_SCRIPT_URL) {
-      fetch(APPS_SCRIPT_URL + "?action=read", { mode: 'cors' })
-        .then(function(res) {
-          if (!res.ok) throw new Error('HTTP ' + res.status);
-          return res.json();
-        })
-        .then(function(result) {
-          if (result && result.profile && Object.keys(result.profile).length > 0) {
-            // Cek apakah data berbeda sebelum re-render
-            const currentJson = JSON.stringify(state.data);
-            const newJson = JSON.stringify(result);
-            if (currentJson !== newJson) {
-              state.data = result;
-              localStorage.setItem("portfolio_data", JSON.stringify(state.data));
-              console.log("[Portfolio] Data diperbarui dari Google Sheets (background sync).");
-              renderProfile();
-              renderGrid();
-            } else {
-              console.log("[Portfolio] Data sudah terkini, tidak perlu re-render.");
-            }
+  return fetch(APPS_SCRIPT_URL + "?action=read", { mode: 'cors' })
+    .then(function(res) {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.json();
+    })
+    .then(function(result) {
+      if (result && result.profile && Object.keys(result.profile).length > 0) {
+        const currentJson = JSON.stringify(state.data);
+        const newJson = JSON.stringify(result);
+        if (currentJson !== newJson) {
+          if (showLoaderIfChanged) {
+            showSyncLoading("Pembaruan terdeteksi. Menyinkronkan...");
           }
-        })
-        .catch(function(err) {
-          console.warn("[Portfolio] Background sync gagal:", err);
-        });
-    }
-  } else {
-    // TIDAK ADA CACHE: Perlu fetch dari Google Sheets dulu
-    if (loaderMessage) loaderMessage.innerText = 'Memuat portofolio untuk pertama kali...';
-    loadDataFromGoogleSheets().finally(function() {
-      if (!state.data) state.data = DEFAULT_DATA;
-      renderApp();
+          state.data = result;
+          localStorage.setItem("portfolio_data", JSON.stringify(state.data));
+          renderProfile();
+          renderGrid();
+          if (showLoaderIfChanged) {
+            // Berikan sedikit jeda agar transisi loader terasa halus
+            setTimeout(function() {
+              hideSyncLoading();
+              showToast("Portofolio berhasil diperbarui!");
+            }, 800);
+          }
+        }
+      }
+    })
+    .catch(function(err) {
+      console.warn("[Portfolio] Gagal memeriksa pembaruan:", err);
     });
+}
+
+// Initial Load & Auto-Sync
+// PENTING: Loader sudah VISIBLE dari HTML secara default
+document.addEventListener("DOMContentLoaded", function() {
+  if (!state.data) {
+    state.data = DEFAULT_DATA;
   }
+  
+  // Update nama brand di loader sesuai profil (jika ada)
+  if (loaderBrandName && state.data.profile && state.data.profile.name &&
+      state.data.profile.name !== 'Nama Lengkap Anda') {
+    loaderBrandName.innerText = state.data.profile.name.split(' ')[0];
+  }
+
+  // Render awal dari cache (cepat, tidak blank)
+  renderProfile();
+  renderGrid();
+  updateAdminStateUI();
+  initSectionObserver();
+
+  // Ambil data terbaru dari Google Sheets di awal
+  showSyncLoading("Menyinkronkan data terbaru...");
+  checkForUpdates(false)
+    .finally(function() {
+      hideSyncLoading();
+    });
+
+  // Polling: Cek pembaruan setiap 15 detik secara berkala
+  setInterval(function() {
+    checkForUpdates(true);
+  }, 15000);
+
+  // Sync saat tab kembali aktif/difokuskan oleh pengguna
+  window.addEventListener("focus", function() {
+    checkForUpdates(true);
+  });
 });
