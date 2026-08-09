@@ -371,12 +371,14 @@ const syncLoader = document.getElementById('syncLoader');
 const loaderMessage = document.getElementById('loaderMessage');
 const loaderBrandName = document.getElementById('loaderBrandName');
 
-// Sembunyikan loader (dengan transisi halus)
+// Sembunyikan loader sepenuhnya (hapus active DAN tambah hidden)
 function hideSyncLoading() {
   if (!syncLoader) return;
+  syncLoader.classList.remove('active');
+  // Beri sedikit delay agar transisi fade-out terlihat
   setTimeout(function() {
     syncLoader.classList.add('hidden');
-  }, 180);
+  }, 200);
 }
 
 // Tampilkan loader dengan pesan tertentu
@@ -389,8 +391,8 @@ function showSyncLoading(message) {
 
 // Tampilkan loader sebentar saja (maks maxMs milidetik), lalu sembunyikan otomatis
 function showTemporaryLoading(message, maxMs) {
-  maxMs = maxMs || 1500;
-  showSyncLoading(message);
+  maxMs = maxMs || 1200;
+  showSyncLoading(message || 'Memuat portofolio...');
   setTimeout(hideSyncLoading, maxMs);
 }
 
