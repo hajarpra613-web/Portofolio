@@ -152,8 +152,8 @@ function formatDriveUrl(url) {
   }
 
   if (fileId) {
-    // Gunakan endpoint thumbnail Drive yang lebih reliabel untuk embed gambar
-    return 'https://drive.google.com/thumbnail?id=' + fileId + '&sz=w1600';
+    // Gunakan endpoint uc?id Drive yang lebih kompatibel di semua browser tanpa terblokir cookie pihak ketiga
+    return 'https://drive.google.com/uc?id=' + fileId;
   }
   return url;
 }
