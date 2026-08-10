@@ -423,14 +423,21 @@ function saveData() {
     const saveUrl = APPS_SCRIPT_URL + (APPS_SCRIPT_URL.includes('?') ? '&' : '?') + 'action=savePortfolio';
     fetch(saveUrl, {
       method: "POST",
-      mode: "no-cors",
+      mode: "cors",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify({ action: "savePortfolio", data: state.data })
     })
-    .then(function() {
-      // no-cors selalu opaque response — anggap sukses jika tidak ada network error
-      console.log("[Portfolio] Data terkirim ke Google Sheets (no-cors).");
-      showToast('✓ Tersimpan & dikirim ke Google Sheets!');
+    .then(function(res) {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.json();
+    })
+    .then(function(result) {
+      if (result && result.success) {
+        console.log("[Portfolio] Data terkirim ke Google Sheets.");
+        showToast('✓ Tersimpan & dikirim ke Google Sheets!');
+      } else {
+        throw new Error(result.error || 'Unknown error');
+      }
     })
     .catch(function(err) {
       console.warn("[Portfolio] Gagal kirim POST:", err);
