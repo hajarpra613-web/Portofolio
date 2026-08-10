@@ -178,14 +178,14 @@ function uploadImageToAppsScript(base64Data, fileName) {
       return;
     }
     const uploadUrl = APPS_SCRIPT_URL + (APPS_SCRIPT_URL.includes('?') ? '&' : '?') + 'action=uploadFile';
+    
+    // Gunakan text/plain murni untuk menghindari masalah CORS preflight browser
     fetch(uploadUrl, {
       method: 'POST',
-      mode: 'cors',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify({ action: 'uploadFile', base64: base64Data, fileName: fileName || 'portfolio_image.jpg' })
     })
     .then(function(res) {
-      if (!res.ok) throw new Error('HTTP ' + res.status);
       return res.json();
     })
     .then(function(result) {
@@ -504,26 +504,42 @@ function saveData() {
     // Jika berjalan di web external (GitHub Pages)
     if (typeof APPS_SCRIPT_URL !== 'undefined' && APPS_SCRIPT_URL) {
       const saveUrl = APPS_SCRIPT_URL + (APPS_SCRIPT_URL.includes('?') ? '&' : '?') + 'action=savePortfolio';
+      
       fetch(saveUrl, {
         method: "POST",
-        mode: "cors",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        headers: { "Content-Type": "text/plain" },
         body: JSON.stringify({ action: "savePortfolio", data: state.data })
       })
       .then(function(res) {
-        if (!res.ok) throw new Error('HTTP ' + res.status);
         return res.json();
       })
       .then(function(result) {
         if (result && result.success) {
           showToast('✓ Tersimpan & dikirim ke Google Sheets!');
         } else {
-          throw new Error((result && result.error) || 'Unknown error');
+          throw new Error((result && result.error) || 'Gagal merespon');
         }
       })
       .catch(function(err) {
-        console.warn("[Portfolio] Gagal kirim POST:", err);
-        showToast('Tersimpan lokal, gagal kirim ke server.', 'error');
+        console.warn("[Portfolio] POST JSON biasa terhambat, mencoba pengiriman form data fallback...", err);
+        
+        // Fallback pengiriman menggunakan URLSearchParams
+        var formData = new URLSearchParams();
+        formData.append("action", "savePortfolio");
+        formData.append("data", JSON.stringify(state.data));
+
+        fetch(APPS_SCRIPT_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: formData
+        })
+        .then(function() {
+          showToast('✓ Tersimpan & dikirim ke Google Sheets!');
+        })
+        .catch(function(finalErr) {
+          console.error("[Portfolio] Gagal kirim akhir:", finalErr);
+          showToast('Tersimpan lokal, gagal kirim ke server.', 'error');
+        });
       });
     }
   }
