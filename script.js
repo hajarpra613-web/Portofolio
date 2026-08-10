@@ -435,62 +435,107 @@ function showToast(message, type) {
 }
 
 // Storage Save Handler (LocalStorage & Google Sheets Sync)
-// TIDAK menampilkan loader — hanya simpan & kirim di background
 function saveData() {
-  // Tampilkan feedback langsung
   showToast('⏳ Menyimpan data...');
   lastLocalEditTime = Date.now();
   state.data.lastSaved = new Date().toISOString();
 
+  // Simpan cepat ke localStorage dulu
   try {
     localStorage.setItem("portfolio_data", JSON.stringify(state.data));
     console.log('[Portfolio] Data tersimpan ke localStorage.');
   } catch(e) {
     console.error('[Portfolio] Gagal simpan ke localStorage:', e);
-    showToast('Gagal menyimpan data. Storage penuh?', 'error');
-    return;
   }
 
-  // Jika berjalan di lingkungan Google Apps Script
-  if (typeof google !== 'undefined' && google.script && google.script.run) {
-    google.script.run
-      .withSuccessHandler(function() {
-        console.log("Data berhasil disinkronkan ke Google Sheets via GAS!");
-        showToast('✓ Tersimpan ke Google Sheets!');
+  // Cari apakah ada gambar yang masih berupa data Base64
+  var items = state.data.items || [];
+  var profile = state.data.profile || {};
+  var pendingUploads = [];
+
+  if (profile.avatar && profile.avatar.startsWith('data:image/')) {
+    pendingUploads.push(
+      uploadImageToAppsScript(profile.avatar, 'profile_avatar.jpg').then(function(url) {
+        if (url) state.data.profile.avatar = url;
       })
-      .withFailureHandler(function(err) {
-        console.error("Gagal sync GAS:", err);
-        showToast('Gagal sync ke Google Sheets.', 'error');
-      })
-      .savePortfolioDataToSheet(state.data);
-    return;
+    );
   }
 
-  // Jika berjalan di web external (GitHub Pages) — fire and forget (no-cors)
-  if (typeof APPS_SCRIPT_URL !== 'undefined' && APPS_SCRIPT_URL) {
-    const saveUrl = APPS_SCRIPT_URL + (APPS_SCRIPT_URL.includes('?') ? '&' : '?') + 'action=savePortfolio';
-    fetch(saveUrl, {
-      method: "POST",
-      mode: "cors",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ action: "savePortfolio", data: state.data })
-    })
-    .then(function(res) {
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      return res.json();
-    })
-    .then(function(result) {
-      if (result && result.success) {
-        console.log("[Portfolio] Data terkirim ke Google Sheets.");
-        showToast('✓ Tersimpan & dikirim ke Google Sheets!');
-      } else {
-        throw new Error(result.error || 'Unknown error');
-      }
-    })
-    .catch(function(err) {
-      console.warn("[Portfolio] Gagal kirim POST:", err);
-      showToast('Tersimpan lokal, gagal kirim ke server.', 'error');
+  items.forEach(function(item, idx) {
+    if (item.image && item.image.startsWith('data:image/')) {
+      pendingUploads.push(
+        uploadImageToAppsScript(item.image, 'item_' + idx + '.jpg').then(function(url) {
+          if (url) state.data.items[idx].image = url;
+        })
+      );
+    }
+    if (item.gallery && Array.isArray(item.gallery)) {
+      item.gallery.forEach(function(g, gIdx) {
+        if (g.image && g.image.startsWith('data:image/')) {
+          pendingUploads.push(
+            uploadImageToAppsScript(g.image, 'item_' + idx + '_gal_' + gIdx + '.jpg').then(function(url) {
+              if (url) state.data.items[idx].gallery[gIdx].image = url;
+            })
+          );
+        }
+      });
+    }
+  });
+
+  // Fungsi pengiriman aktual setelah dipastikan semua Base64 diubah ke URL Drive
+  function executeServerSync() {
+    try {
+      localStorage.setItem("portfolio_data", JSON.stringify(state.data));
+    } catch(e) {}
+
+    // Jika berjalan di lingkungan Google Apps Script
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function() {
+          showToast('✓ Tersimpan ke Google Sheets!');
+        })
+        .withFailureHandler(function(err) {
+          showToast('Gagal sync ke Google Sheets.', 'error');
+        })
+        .savePortfolioDataToSheet(state.data);
+      return;
+    }
+
+    // Jika berjalan di web external (GitHub Pages)
+    if (typeof APPS_SCRIPT_URL !== 'undefined' && APPS_SCRIPT_URL) {
+      const saveUrl = APPS_SCRIPT_URL + (APPS_SCRIPT_URL.includes('?') ? '&' : '?') + 'action=savePortfolio';
+      fetch(saveUrl, {
+        method: "POST",
+        mode: "cors",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ action: "savePortfolio", data: state.data })
+      })
+      .then(function(res) {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
+      })
+      .then(function(result) {
+        if (result && result.success) {
+          showToast('✓ Tersimpan & dikirim ke Google Sheets!');
+        } else {
+          throw new Error((result && result.error) || 'Unknown error');
+        }
+      })
+      .catch(function(err) {
+        console.warn("[Portfolio] Gagal kirim POST:", err);
+        showToast('Tersimpan lokal, gagal kirim ke server.', 'error');
+      });
+    }
+  }
+
+  // Jika ada unggahan gambar Base64 tertunda, tunggu hingga selesai dulu
+  if (pendingUploads.length > 0) {
+    showToast('⏳ Mengupload gambar ke Google Drive...');
+    Promise.all(pendingUploads).then(function() {
+      executeServerSync();
     });
+  } else {
+    executeServerSync();
   }
 }
 
