@@ -3,7 +3,7 @@
  */
 
 // Google Apps Script Web App URL
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzV4aNZ7w_tCPQADeZGIXR-Hd-kxWbFo-WYx6rKWJ-GAiMi3vq-SADXAxwymJIwTBHW/exec";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxcdlieLa12dQsUJFvF0DzElNPiyxvJk_3xx1wYHtye8TgzukcPBQ9WyvhuYEbK9pk/exec";
 
 // Initial Seed Data
 const DEFAULT_DATA = {
@@ -147,11 +147,13 @@ function formatDriveUrl(url) {
     fileId = url.split('/file/d/')[1].split('/')[0];
   } else if (url.includes('lh3.googleusercontent.com/d/')) {
     fileId = url.split('lh3.googleusercontent.com/d/')[1].split('=')[0];
+  } else if (url.includes('drive.google.com/thumbnail?id=')) {
+    fileId = url.split('thumbnail?id=')[1].split('&')[0];
   }
 
   if (fileId) {
-    // Menambahkan parameter =w1600 agar Google Drive menyajikan gambar resolusi HD (1600px) bukan thumbnail buram
-    return 'https://lh3.googleusercontent.com/d/' + fileId + '=w1600';
+    // Gunakan endpoint thumbnail Drive yang lebih reliabel untuk embed gambar
+    return 'https://drive.google.com/thumbnail?id=' + fileId + '&sz=w1600';
   }
   return url;
 }
@@ -171,12 +173,8 @@ function compressImageFile(file, maxWidth, maxHeight, quality, callback) {
   reader.onload = function(e) {
     const rawBase64 = e.target.result;
 
-    // Jika ukuran file gambar di bawah 1.5 MB, gunakan 100% file asli tanpa kompresi canvas
-    // Ini menjamin gambar yang di-upload tampil 100% jernih, tajam & tidak ada penurunan kualitas sama sekali!
-    if (file.size && file.size < 1500000) {
-      callback(rawBase64);
-      return;
-    }
+    // Semua gambar akan di-resize secara proporsional sesuai resolusi maksimal (misal 1200x900)
+    // agar ukuran Base64 tetap ringan namun kualitas tetap tajam (HD).
 
     const img = new Image();
     img.onload = function() {
@@ -263,7 +261,7 @@ function renderGrid() {
 
     card.innerHTML =
       '<div class="card-image-wrap" onclick="openLightbox(\'' + formattedImg + '\', \'' + item.title + ' - ' + item.subtitle + '\')">' +
-        '<img src="' + formattedImg + '" alt="' + item.title + '" class="card-image" onerror="this.src=\'https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=600&auto=format&fit=crop&q=80\'">' +
+        '<img src="' + formattedImg + '" alt="' + item.title + '" class="card-image" onerror="this.src=\'https://placehold.co/600x400/2a2a35/a0a0b0?text=Foto+Gagal+Dimuat\'">' +
         '<span class="card-badge">' + badgeText + '</span>' +
       '</div>' +
       '<div class="card-body">' +
@@ -289,7 +287,7 @@ function renderGrid() {
           subPhotosHtml +=
             '<div class="exp-sub-item">' +
               '<div class="exp-sub-img-wrap" onclick="openLightbox(\'' + gImg + '\', \'' + item.title + ' - Foto Kegiatan\')">' +
-                '<img src="' + gImg + '" alt="Foto Kegiatan" onerror="this.src=\'https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=600&auto=format&fit=crop&q=80\'">' +
+                '<img src="' + gImg + '" alt="Foto Kegiatan" onerror="this.src=\'https://placehold.co/600x400/2a2a35/a0a0b0?text=Foto+Gagal+Dimuat\'">' +
               '</div>' +
               '<div class="exp-sub-caption">' + gCap + '</div>' +
             '</div>';
@@ -314,7 +312,7 @@ function renderGrid() {
           '<!-- Sisi Kiri: Foto Utama -->' +
           '<div class="exp-main-box">' +
             '<div class="exp-main-img-wrap" onclick="openLightbox(\'' + mainImg + '\', \'' + item.title + '\')">' +
-              '<img src="' + mainImg + '" alt="' + item.title + '" onerror="this.src=\'https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=600&auto=format&fit=crop&q=80\'">' +
+              '<img src="' + mainImg + '" alt="' + item.title + '" onerror="this.src=\'https://placehold.co/600x400/2a2a35/a0a0b0?text=Foto+Gagal+Dimuat\'">' +
             '</div>' +
             '<div class="exp-photo-caption">' + (formattedDesc || mainCap) + '</div>' +
           '</div>' +
