@@ -3,7 +3,7 @@
  */
 
 // Google Apps Script Web App URL
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxxZOjj1V6g3daTjWakhSHGHGMsRm7Zl8U2zLeVwOP10b03ZBofKFJmzVKypuvWnMUg/exec";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxcdlieLa12dQsUJFvF0DzElNPiyxvJk_3xx1wYHtye8TgzukcPBQ9WyvhuYEbK9pk/exec";
 
 // Initial Seed Data
 const DEFAULT_DATA = {
@@ -149,13 +149,59 @@ function formatDriveUrl(url) {
     fileId = url.split('lh3.googleusercontent.com/d/')[1].split('=')[0];
   } else if (url.includes('drive.google.com/thumbnail?id=')) {
     fileId = url.split('thumbnail?id=')[1].split('&')[0];
+  } else if (url.includes('drive.google.com/uc') && url.includes('id=')) {
+    fileId = url.split('id=')[1].split('&')[0];
   }
 
   if (fileId) {
-    // Gunakan endpoint uc?id Drive yang lebih kompatibel di semua browser tanpa terblokir cookie pihak ketiga
-    return 'https://drive.google.com/uc?id=' + fileId;
+    // Gunakan thumbnail Google Drive yang kompatibel lintas browser & lintas device
+    // Format lh3.googleusercontent.com lebih stabil dari uc?export=view
+    return 'https://lh3.googleusercontent.com/d/' + fileId + '=w800';
   }
   return url;
+}
+
+/**
+ * Upload Base64 image ke Google Drive via Google Apps Script Web App.
+ * Mengembalikan Promise<string> berisi URL Drive jika berhasil, atau null jika gagal.
+ * Ini memastikan gambar tersimpan di cloud (Drive), bukan hanya base64 lokal,
+ * sehingga browser lain juga bisa melihat gambar yang sama.
+ */
+function uploadImageToAppsScript(base64Data, fileName) {
+  return new Promise(function(resolve) {
+    if (!base64Data || !base64Data.startsWith('data:image/')) {
+      resolve(null);
+      return;
+    }
+    if (typeof APPS_SCRIPT_URL === 'undefined' || !APPS_SCRIPT_URL) {
+      resolve(null);
+      return;
+    }
+    const uploadUrl = APPS_SCRIPT_URL + (APPS_SCRIPT_URL.includes('?') ? '&' : '?') + 'action=uploadFile';
+    fetch(uploadUrl, {
+      method: 'POST',
+      mode: 'cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'uploadFile', base64: base64Data, fileName: fileName || 'portfolio_image.jpg' })
+    })
+    .then(function(res) {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.json();
+    })
+    .then(function(result) {
+      if (result && result.success && result.url) {
+        console.log('[Portfolio] Gambar berhasil diupload ke Google Drive:', result.url);
+        resolve(result.url);
+      } else {
+        console.warn('[Portfolio] Upload ke Drive gagal:', result && result.error);
+        resolve(null);
+      }
+    })
+    .catch(function(err) {
+      console.warn('[Portfolio] Upload ke Drive error:', err);
+      resolve(null);
+    });
+  });
 }
 
 // Compress image file dengan kualitas HD & proteksi kualitas gambar asli
@@ -663,17 +709,27 @@ profileForm.addEventListener("submit", function(e) {
     compressImageFile(file, 600, 600, 0.85, function(compressedBase64) {
       const base64Data = compressedBase64 || avatarUrl;
       if (typeof google !== 'undefined' && google.script && google.script.run) {
+        // Di dalam Google Apps Script environment
         google.script.run
-          .withSuccessHandler(function(driveUrl) {
-            finishSaveProfile(driveUrl);
-          })
+          .withSuccessHandler(function(driveUrl) { finishSaveProfile(driveUrl); })
           .withFailureHandler(function(err) {
-            console.warn("Drive upload profile failed, using compressed base64 fallback:", err);
+            console.warn('Drive upload profile via GAS gagal, fallback base64:', err);
             finishSaveProfile(base64Data);
           })
-          .uploadFileToDrive(base64Data, file.name, { category: "profile", title: newName });
+          .uploadFileToDrive(base64Data, file.name, { category: 'profile', title: newName });
       } else {
-        finishSaveProfile(base64Data);
+        // Di GitHub Pages / external web: upload via fetch ke GAS Web App
+        showToast('⏳ Mengupload foto profil ke Drive...');
+        uploadImageToAppsScript(base64Data, file.name)
+          .then(function(driveUrl) {
+            if (driveUrl) {
+              finishSaveProfile(driveUrl);
+            } else {
+              // Fallback: simpan base64 hanya jika Drive upload benar-benar gagal
+              console.warn('[Portfolio] Gagal upload ke Drive, menyimpan base64 sebagai fallback.');
+              finishSaveProfile(base64Data);
+            }
+          });
       }
     });
     return;
@@ -825,17 +881,25 @@ itemForm.addEventListener("submit", function(e) {
           compressImageFile(file, 1000, 750, 0.8, function(compressedBase64) {
             const base64Data = compressedBase64 || existingUrl;
             if (typeof google !== 'undefined' && google.script && google.script.run) {
+              // Di dalam Google Apps Script environment
               google.script.run
-                .withSuccessHandler(function(driveUrl) {
-                  resolve({ image: driveUrl, caption: caption });
-                })
+                .withSuccessHandler(function(driveUrl) { resolve({ image: driveUrl, caption: caption }); })
                 .withFailureHandler(function(err) {
-                  console.warn("Sub photo drive upload failed, fallback base64:", err);
+                  console.warn('Sub photo drive upload via GAS gagal, fallback base64:', err);
                   resolve({ image: base64Data, caption: caption });
                 })
-                .uploadFileToDrive(base64Data, file.name, { category: "sub-photo", title: title });
+                .uploadFileToDrive(base64Data, file.name, { category: 'sub-photo', title: title });
             } else {
-              resolve({ image: base64Data, caption: caption });
+              // Di GitHub Pages / external web: upload via fetch ke GAS Web App
+              uploadImageToAppsScript(base64Data, file.name)
+                .then(function(driveUrl) {
+                  if (driveUrl) {
+                    resolve({ image: driveUrl, caption: caption });
+                  } else {
+                    console.warn('[Portfolio] Sub photo gagal upload ke Drive, fallback base64.');
+                    resolve({ image: base64Data, caption: caption });
+                  }
+                });
             }
           });
         } else if (existingUrl) {
@@ -881,17 +945,26 @@ itemForm.addEventListener("submit", function(e) {
     compressImageFile(file, 1200, 900, 0.8, function(compressedBase64) {
       const base64Data = compressedBase64 || imageUrl;
       if (typeof google !== 'undefined' && google.script && google.script.run) {
+        // Di dalam Google Apps Script environment
         google.script.run
-          .withSuccessHandler(function(driveUrl) {
-            handleFinish(driveUrl);
-          })
+          .withSuccessHandler(function(driveUrl) { handleFinish(driveUrl); })
           .withFailureHandler(function(err) {
-            console.warn("Drive upload main file failed, fallback base64:", err);
+            console.warn('Drive upload main foto via GAS gagal, fallback base64:', err);
             handleFinish(base64Data);
           })
           .uploadFileToDrive(base64Data, file.name, { category: category, title: title });
       } else {
-        handleFinish(base64Data);
+        // Di GitHub Pages / external web: upload via fetch ke GAS Web App
+        showToast('⏳ Mengupload gambar ke Google Drive...');
+        uploadImageToAppsScript(base64Data, file.name)
+          .then(function(driveUrl) {
+            if (driveUrl) {
+              handleFinish(driveUrl);
+            } else {
+              console.warn('[Portfolio] Gambar gagal upload ke Drive, menyimpan base64 sebagai fallback.');
+              handleFinish(base64Data);
+            }
+          });
       }
     });
     return;
