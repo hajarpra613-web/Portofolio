@@ -3,7 +3,7 @@
  */
 
 // Google Apps Script Web App URL
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwdyjavYNqkWfVBSjF94I4Gn0H7X_LANPed4t4xppTzIYlWs-N1f9bvCoyZy9CC3WAv/exec";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxcdlieLa12dQsUJFvF0DzElNPiyxvJk_3xx1wYHtye8TgzukcPBQ9WyvhuYEbK9pk/exec";
 
 // Initial Seed Data
 const DEFAULT_DATA = {
@@ -437,6 +437,8 @@ function showToast(message, type) {
 // Storage Save Handler (LocalStorage & Google Sheets Sync)
 // TIDAK menampilkan loader — hanya simpan & kirim di background
 function saveData() {
+  // Tampilkan feedback langsung
+  showToast('⏳ Menyimpan data...');
   lastLocalEditTime = Date.now();
   state.data.lastSaved = new Date().toISOString();
 
@@ -500,21 +502,22 @@ function mergeData(localData, serverData) {
   const localTime = new Date(localData.lastSaved || 0).getTime();
   const serverTime = new Date(serverData.lastSaved || 0).getTime();
 
-  // Jika browser ini baru saja mengedit dalam 15 detik terakhir, prioritaskan data lokal sementara
-  if (Date.now() - lastLocalEditTime < 15000) {
-    console.log('[Portfolio] Menggunakan data lokal (karena baru diedit).');
+  // Jika browser ini baru saja mengedit dalam 30 detik terakhir, prioritaskan data lokal sementara
+  if (Date.now() - lastLocalEditTime < 30000) {
+    console.log('[Portfolio] Menggunakan data lokal (karena baru diedit dalam 30 detik).');
     return localData;
   }
 
-  // Mencegah masalah gambar kembali blur: Jika data lokal lebih baru dari server (misal upload lambat/gagal),
-  // JANGAN timpa data lokal dengan data server yang sudah usang.
-  if (localTime > serverTime) {
-    console.log('[Portfolio] Data lokal lebih baru, mencegah overwrite dari server versi lama.');
-    return localData;
+  // Jika server lebih baru, terima data dari server (agar browser lain dapat pembaruan)
+  if (serverTime >= localTime) {
+    console.log('[Portfolio] Data server lebih baru atau sama, menggunakan server:', new Date(serverTime).toLocaleTimeString());
+    return serverData;
   }
 
-  // Selebihnya, terima pembaruan dari server (agar browser lain langsung menampilkan foto & teks terbaru)
-  return serverData;
+  // Data lokal lebih baru, tapi sudah lebih dari 30 detik sejak edit
+  // Kemungkinan server belum tersinkron, gunakan lokal
+  console.log('[Portfolio] Data lokal lebih baru dari server, menggunakan lokal.');
+  return localData;
 }
 
 const syncLoader = document.getElementById('syncLoader');
@@ -738,9 +741,78 @@ profileForm.addEventListener("submit", function(e) {
   finishSaveProfile(avatarUrl);
 });
 
-// Force Sync Event
+// Force Sync Event: Upload semua Base64 ke Drive dulu, lalu simpan
 if (forceSyncBtn) {
-  forceSyncBtn.addEventListener("click", function() {
+  forceSyncBtn.addEventListener('click', function() {
+    migrateBase64ToDriveAndSync();
+  });
+}
+
+/**
+ * Memeriksa semua gambar dalam state.data yang masih berformat Base64,
+ * menguploadnya ke Google Drive, lalu menyimpan ulang ke server.
+ * Ini menyelesaikan masalah: gambar hanya terlihat di browser yang upload.
+ */
+function migrateBase64ToDriveAndSync() {
+  showToast('⏳ Memigrasikan foto ke Drive & sinkronisasi...');
+
+  var items = state.data.items || [];
+  var profile = state.data.profile || {};
+  var uploadTasks = [];
+
+  // Cek avatar profil
+  if (profile.avatar && profile.avatar.startsWith('data:image/')) {
+    uploadTasks.push(
+      uploadImageToAppsScript(profile.avatar, 'avatar_profil.jpg')
+        .then(function(url) {
+          if (url) {
+            console.log('[Portfolio] Avatar profil berhasil dimigrasi ke Drive:', url);
+            state.data.profile.avatar = url;
+          } else {
+            console.warn('[Portfolio] Gagal migrasi avatar profil.');
+          }
+        })
+    );
+  }
+
+  // Cek semua gambar item & gallery
+  items.forEach(function(item, idx) {
+    if (item.image && item.image.startsWith('data:image/')) {
+      uploadTasks.push(
+        uploadImageToAppsScript(item.image, 'item_' + idx + '_main.jpg')
+          .then(function(url) {
+            if (url) {
+              console.log('[Portfolio] Foto utama item "' + item.title + '" dimigrasi ke Drive:', url);
+              state.data.items[idx].image = url;
+            }
+          })
+      );
+    }
+    var gallery = item.gallery || [];
+    gallery.forEach(function(g, gIdx) {
+      if (g.image && g.image.startsWith('data:image/')) {
+        uploadTasks.push(
+          uploadImageToAppsScript(g.image, 'item_' + idx + '_gallery_' + gIdx + '.jpg')
+            .then(function(url) {
+              if (url) {
+                console.log('[Portfolio] Galeri foto dimigrasi ke Drive:', url);
+                state.data.items[idx].gallery[gIdx].image = url;
+              }
+            })
+        );
+      }
+    });
+  });
+
+  if (uploadTasks.length === 0) {
+    showToast('⏳ Tidak ada Base64 ditemukan, langsung sinkronisasi...');
+    saveData();
+    return;
+  }
+
+  showToast('⏳ Mengupload ' + uploadTasks.length + ' foto ke Drive...');
+  Promise.all(uploadTasks).then(function() {
+    showToast('✓ Foto dimigrasi! Menyimpan ke Google Sheets...');
     saveData();
   });
 }
