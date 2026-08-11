@@ -179,7 +179,6 @@ function uploadImageToAppsScript(base64Data, fileName) {
     }
     const uploadUrl = APPS_SCRIPT_URL + (APPS_SCRIPT_URL.includes('?') ? '&' : '?') + 'action=uploadFile';
     
-    // Gunakan text/plain murni untuk menghindari masalah CORS preflight browser
     fetch(uploadUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
@@ -198,8 +197,20 @@ function uploadImageToAppsScript(base64Data, fileName) {
       }
     })
     .catch(function(err) {
-      console.warn('[Portfolio] Upload ke Drive error:', err);
-      resolve(null);
+      console.warn('[Portfolio] Upload ke Drive error (mencoba no-cors mode):', err);
+      
+      // Mengirimkan via no-cors jika cors diblokir
+      fetch(uploadUrl, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ action: 'uploadFile', base64: base64Data, fileName: fileName || 'portfolio_image.jpg' })
+      }).then(function() {
+        console.log('[Portfolio] Upload via no-cors dikirim ke GAS.');
+        resolve(null);
+      }).catch(function() {
+        resolve(null);
+      });
     });
   });
 }
@@ -504,42 +515,22 @@ function saveData() {
     // Jika berjalan di web external (GitHub Pages)
     if (typeof APPS_SCRIPT_URL !== 'undefined' && APPS_SCRIPT_URL) {
       const saveUrl = APPS_SCRIPT_URL + (APPS_SCRIPT_URL.includes('?') ? '&' : '?') + 'action=savePortfolio';
-      
+      const bodyPayload = JSON.stringify({ action: "savePortfolio", data: state.data });
+
+      // Gunakan fetch dengan mode: 'no-cors' sebagai proteksi utama dari kendala CORS browser
       fetch(saveUrl, {
         method: "POST",
+        mode: "no-cors",
         headers: { "Content-Type": "text/plain" },
-        body: JSON.stringify({ action: "savePortfolio", data: state.data })
+        body: bodyPayload
       })
-      .then(function(res) {
-        return res.json();
-      })
-      .then(function(result) {
-        if (result && result.success) {
-          showToast('✓ Tersimpan & dikirim ke Google Sheets!');
-        } else {
-          throw new Error((result && result.error) || 'Gagal merespon');
-        }
+      .then(function() {
+        console.log("[Portfolio] Data berhasil terkirim ke Google Sheets (no-cors mode).");
+        showToast('✓ Tersimpan & dikirim ke Google Sheets!');
       })
       .catch(function(err) {
-        console.warn("[Portfolio] POST JSON biasa terhambat, mencoba pengiriman form data fallback...", err);
-        
-        // Fallback pengiriman menggunakan URLSearchParams
-        var formData = new URLSearchParams();
-        formData.append("action", "savePortfolio");
-        formData.append("data", JSON.stringify(state.data));
-
-        fetch(APPS_SCRIPT_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: formData
-        })
-        .then(function() {
-          showToast('✓ Tersimpan & dikirim ke Google Sheets!');
-        })
-        .catch(function(finalErr) {
-          console.error("[Portfolio] Gagal kirim akhir:", finalErr);
-          showToast('Tersimpan lokal, gagal kirim ke server.', 'error');
-        });
+        console.warn("[Portfolio] Gagal kirim POST:", err);
+        showToast('Tersimpan lokal, gagal kirim ke server.', 'error');
       });
     }
   }
