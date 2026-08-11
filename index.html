@@ -262,12 +262,12 @@
         </div>
 
         <div class="form-group">
-          <label class="form-label">Sumber Foto / Gambar HD</label>
+          <label class="form-label">Foto Utama (Bisa pilih 1 s/d 3 foto untuk Auto-Slideshow)</label>
           <div style="display: flex; gap: 10px; margin-bottom: 8px;">
-            <input type="file" id="itemFileInput" accept="image/*" class="form-control" style="padding: 6px;">
+            <input type="file" id="itemFileInput" accept="image/*" multiple class="form-control" style="padding: 6px;">
           </div>
-          <p style="font-size: 0.8rem; color: var(--text-dim); margin-bottom: 6px;">Atau tempelkan Link Foto / Google Drive URL:</p>
-          <input type="url" id="itemImageUrl" class="form-control" placeholder="https://drive.google.com/... atau https://...">
+          <p style="font-size: 0.8rem; color: var(--text-dim); margin-bottom: 6px;">Atau tempelkan Link Foto (jika lebih dari 1, pisahkan dengan koma):</p>
+          <input type="text" id="itemImageUrl" class="form-control" placeholder="https://...1, https://...2">
         </div>
 
         <div class="form-group">
