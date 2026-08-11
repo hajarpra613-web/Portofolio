@@ -1008,46 +1008,210 @@ function migrateBase64ToDriveAndSync() {
   });
 }
 
-// Sub-Photo Gallery Helpers for Pengalaman
+// Multi-Photo Slot Helpers for Modal Form
+let modalMainPhotos = [];
+let modalSubSlots = [];
+
+const mainPhotosThumbs = document.getElementById("mainPhotosThumbs");
+const itemFileInput = document.getElementById("itemFileInput");
+const itemImageUrl = document.getElementById("itemImageUrl");
+const addMainUrlBtn = document.getElementById("addMainUrlBtn");
 const addSubPhotoBtn = document.getElementById("addSubPhotoBtn");
 const subPhotosContainer = document.getElementById("subPhotosContainer");
 
-function addSubPhotoRow(imgUrl, caption) {
-  imgUrl = imgUrl || "";
-  caption = caption || "";
+function renderMainPhotoThumbsUI() {
+  if (!mainPhotosThumbs) return;
+  mainPhotosThumbs.innerHTML = "";
 
-  const row = document.createElement("div");
-  row.className = "sub-photo-row";
-  row.style.cssText = "background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 12px; display: flex; flex-direction: column; gap: 8px; position: relative;";
+  if (modalMainPhotos.length === 0) {
+    mainPhotosThumbs.innerHTML = '<div class="photo-thumbs-empty">Belum ada foto utama. Klik + Upload Foto atau tempelkan Link.</div>';
+    return;
+  }
 
-  row.innerHTML =
-    '<div style="display:flex; justify-content:space-between; align-items:center;">' +
-      '<span style="font-size:0.8rem; font-weight:600; color:var(--secondary);">Foto Tambahan #' + (subPhotosContainer.children.length + 1) + '</span>' +
-      '<button type="button" class="btn-card-action delete btn-remove-sub" style="flex:none; padding:2px 8px; font-size:0.75rem;">Hapus</button>' +
-    '</div>' +
-    '<div>' +
-      '<label class="form-label" style="font-size:0.75rem; margin-bottom:4px;">Upload File Gambar (Pilih 1 s/d 3 Foto sekaligus):</label>' +
-      '<input type="file" class="form-control sub-photo-file" accept="image/*" multiple style="padding:4px 8px; font-size:0.85rem;">' +
-    '</div>' +
-    '<div>' +
-      '<label class="form-label" style="font-size:0.75rem; margin-bottom:4px;">Atau Link Gambar / Drive (Pisahkan koma jika > 1):</label>' +
-      '<input type="text" class="form-control sub-photo-url" placeholder="https://...1, https://...2" value="' + imgUrl + '">' +
-    '</div>' +
-    '<div>' +
-      '<label class="form-label" style="font-size:0.75rem; margin-bottom:4px;">Keterangan Foto Kegiatan:</label>' +
-      '<input type="text" class="form-control sub-photo-caption" placeholder="Jelaskan apa yang dilakukan pada foto ini..." value="' + caption + '">' +
-    '</div>';
+  modalMainPhotos.forEach(function(imgUrl, idx) {
+    const card = document.createElement("div");
+    card.className = "photo-thumb-card";
 
-  row.querySelector(".btn-remove-sub").addEventListener("click", function() {
-    row.remove();
+    const formatted = formatDriveUrl(imgUrl);
+
+    card.innerHTML =
+      '<img src="' + formatted + '" class="photo-thumb-img" alt="Preview ' + (idx + 1) + '" onerror="this.src=\'https://placehold.co/100x100/2a2a35/a0a0b0?text=Error\'">' +
+      '<span class="photo-thumb-badge">Foto #' + (idx + 1) + '</span>' +
+      '<button type="button" class="photo-thumb-remove" title="Hapus foto ini">&times;</button>';
+
+    card.querySelector(".photo-thumb-remove").addEventListener("click", function(e) {
+      e.stopPropagation();
+      modalMainPhotos.splice(idx, 1);
+      renderMainPhotoThumbsUI();
+    });
+
+    mainPhotosThumbs.appendChild(card);
   });
+}
 
-  subPhotosContainer.appendChild(row);
+if (itemFileInput) {
+  itemFileInput.addEventListener("change", function(e) {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    showToast('⏳ Memproses ' + files.length + ' foto...');
+    let processed = 0;
+    files.forEach(function(file) {
+      compressImageFile(file, 1200, 900, 0.8, function(compressedBase64) {
+        if (compressedBase64) {
+          modalMainPhotos.push(compressedBase64);
+        }
+        processed++;
+        if (processed === files.length) {
+          renderMainPhotoThumbsUI();
+          showToast('✓ ' + files.length + ' foto ditambahkan!');
+        }
+      });
+    });
+    itemFileInput.value = "";
+  });
+}
+
+function handleAddMainUrl() {
+  if (!itemImageUrl) return;
+  const val = itemImageUrl.value.trim();
+  if (!val) return;
+
+  const urls = val.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+  urls.forEach(function(url) {
+    modalMainPhotos.push(url);
+  });
+  itemImageUrl.value = "";
+  renderMainPhotoThumbsUI();
+  showToast('✓ Link foto ditambahkan!');
+}
+
+if (addMainUrlBtn) {
+  addMainUrlBtn.addEventListener("click", handleAddMainUrl);
+}
+
+function renderSubPhotoSlotsUI() {
+  if (!subPhotosContainer) return;
+  subPhotosContainer.innerHTML = "";
+
+  if (modalSubSlots.length === 0) {
+    subPhotosContainer.innerHTML = '<div class="photo-thumbs-empty" style="text-align:left;">Belum ada slot galeri tambahan. Klik "+ Tambah Slot Galeri" untuk menambahkan.</div>';
+    return;
+  }
+
+  modalSubSlots.forEach(function(slot, slotIdx) {
+    const row = document.createElement("div");
+    row.className = "sub-photo-row";
+    row.style.cssText = "background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 14px; display: flex; flex-direction: column; gap: 10px;";
+
+    let thumbsHtml = '';
+    if (!slot.images || slot.images.length === 0) {
+      thumbsHtml = '<div class="photo-thumbs-empty" style="padding:6px 10px; font-size:0.78rem;">Belum ada foto pada slot ini. Upload file atau tempel link.</div>';
+    }
+
+    row.innerHTML =
+      '<div style="display:flex; justify-content:space-between; align-items:center; border-bottom: 1px dashed rgba(255,255,255,0.08); padding-bottom: 8px;">' +
+        '<span style="font-size:0.85rem; font-weight:600; color:var(--secondary);">Slot Galeri #' + (slotIdx + 1) + '</span>' +
+        '<button type="button" class="btn-card-action delete btn-remove-slot" style="flex:none; padding:3px 10px; font-size:0.78rem;">Hapus Slot</button>' +
+      '</div>' +
+      '<div>' +
+        '<label class="form-label" style="font-size:0.75rem; margin-bottom:4px;">Foto pada Slot ini (Bisa Upload bertahap / beberapa kali):</label>' +
+        '<div class="photo-thumbs-grid sub-thumbs-box"></div>' +
+        '<div class="slot-upload-controls" style="margin-top:8px;">' +
+          '<label class="btn-card-action edit" style="cursor:pointer; display:inline-flex; align-items:center; gap:4px; padding:5px 12px; font-size:0.78rem;">' +
+            '<span>+ Upload Foto</span>' +
+            '<input type="file" class="sub-file-input" accept="image/*" multiple style="display:none;">' +
+          '</label>' +
+          '<input type="text" class="form-control sub-url-input" placeholder="Atau Link / Drive URL..." style="flex:1; min-width:140px; font-size:0.8rem; padding:4px 8px;">' +
+          '<button type="button" class="btn-card-action edit sub-url-btn" style="padding:5px 10px; font-size:0.78rem;">+ Link</button>' +
+        '</div>' +
+      '</div>' +
+      '<div>' +
+        '<label class="form-label" style="font-size:0.75rem; margin-bottom:4px;">Keterangan Foto Kegiatan:</label>' +
+        '<input type="text" class="form-control sub-caption-input" placeholder="Jelaskan apa yang dilakukan pada foto ini..." value="' + (slot.caption || "").replace(/"/g, '&quot;') + '">' +
+      '</div>';
+
+    const thumbsBox = row.querySelector(".sub-thumbs-box");
+    if (slot.images && slot.images.length > 0) {
+      slot.images.forEach(function(imgUrl, imgIdx) {
+        const thumbCard = document.createElement("div");
+        thumbCard.className = "photo-thumb-card";
+        const formatted = formatDriveUrl(imgUrl);
+
+        thumbCard.innerHTML =
+          '<img src="' + formatted + '" class="photo-thumb-img" alt="Sub Preview ' + (imgIdx + 1) + '" onerror="this.src=\'https://placehold.co/100x100/2a2a35/a0a0b0?text=Error\'">' +
+          '<span class="photo-thumb-badge">#' + (imgIdx + 1) + '</span>' +
+          '<button type="button" class="photo-thumb-remove" title="Hapus foto ini">&times;</button>';
+
+        thumbCard.querySelector(".photo-thumb-remove").addEventListener("click", function(e) {
+          e.stopPropagation();
+          slot.images.splice(imgIdx, 1);
+          renderSubPhotoSlotsUI();
+        });
+
+        thumbsBox.appendChild(thumbCard);
+      });
+    } else {
+      thumbsBox.innerHTML = thumbsHtml;
+    }
+
+    const subFileInput = row.querySelector(".sub-file-input");
+    subFileInput.addEventListener("change", function(e) {
+      const files = Array.from(e.target.files || []);
+      if (files.length === 0) return;
+
+      showToast('⏳ Memproses ' + files.length + ' foto...');
+      let processed = 0;
+      files.forEach(function(file) {
+        compressImageFile(file, 1200, 900, 0.8, function(compressedBase64) {
+          if (compressedBase64) {
+            if (!slot.images) slot.images = [];
+            slot.images.push(compressedBase64);
+          }
+          processed++;
+          if (processed === files.length) {
+            renderSubPhotoSlotsUI();
+            showToast('✓ ' + files.length + ' foto ditambahkan ke Slot #' + (slotIdx + 1) + '!');
+          }
+        });
+      });
+      subFileInput.value = "";
+    });
+
+    const subUrlInput = row.querySelector(".sub-url-input");
+    const subUrlBtn = row.querySelector(".sub-url-btn");
+
+    function addSubUrl() {
+      const val = subUrlInput.value.trim();
+      if (!val) return;
+      const urls = val.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+      if (!slot.images) slot.images = [];
+      urls.forEach(function(u) { slot.images.push(u); });
+      subUrlInput.value = "";
+      renderSubPhotoSlotsUI();
+      showToast('✓ Link foto ditambahkan!');
+    }
+
+    subUrlBtn.addEventListener("click", addSubUrl);
+
+    const subCaptionInput = row.querySelector(".sub-caption-input");
+    subCaptionInput.addEventListener("input", function(e) {
+      slot.caption = e.target.value;
+    });
+
+    row.querySelector(".btn-remove-slot").addEventListener("click", function() {
+      modalSubSlots.splice(slotIdx, 1);
+      renderSubPhotoSlotsUI();
+    });
+
+    subPhotosContainer.appendChild(row);
+  });
 }
 
 if (addSubPhotoBtn) {
   addSubPhotoBtn.addEventListener("click", function() {
-    addSubPhotoRow("", "");
+    modalSubSlots.push({ images: [], caption: "" });
+    renderSubPhotoSlotsUI();
   });
 }
 
@@ -1060,7 +1224,6 @@ function openItemModal(category, editId) {
   itemForm.reset();
   document.getElementById("itemCategory").value = category;
   document.getElementById("itemId").value = editId || "";
-  subPhotosContainer.innerHTML = "";
 
   const expGallerySection = document.getElementById("expGallerySection");
   if (category === "pengalaman") {
@@ -1076,65 +1239,37 @@ function openItemModal(category, editId) {
       document.getElementById("itemTitle").value = item.title;
       document.getElementById("itemSubtitle").value = item.subtitle;
       document.getElementById("itemPeriod").value = item.period;
-      document.getElementById("itemImageUrl").value = Array.isArray(item.images) ? item.images.join(', ') : (item.image || "");
       document.getElementById("itemDescription").value = item.description;
 
+      modalMainPhotos = Array.isArray(item.images) ? [...item.images] : (item.image ? [item.image] : []);
+
       if (item.category === "pengalaman" && item.gallery && item.gallery.length > 0) {
-        item.gallery.forEach(function(g) {
-          const gUrl = Array.isArray(g.images) ? g.images.join(', ') : (g.image || "");
-          addSubPhotoRow(gUrl, g.caption);
+        modalSubSlots = item.gallery.map(function(g) {
+          const imgs = Array.isArray(g.images) ? [...g.images] : (g.image ? [g.image] : []);
+          return { images: imgs, caption: g.caption || "" };
         });
       } else if (item.category === "pengalaman") {
-        addSubPhotoRow("", "");
+        modalSubSlots = [{ images: [], caption: "" }];
+      } else {
+        modalSubSlots = [];
       }
     }
   } else {
     itemModalTitle.innerText = category === "pengalaman" ? "Tambah Pengalaman & Magang" : "Tambah Sertifikat, Lisensi & Pelatihan";
+    modalMainPhotos = [];
     if (category === "pengalaman") {
-      addSubPhotoRow("", "");
+      modalSubSlots = [{ images: [], caption: "" }];
+    } else {
+      modalSubSlots = [];
     }
   }
 
+  renderMainPhotoThumbsUI();
+  renderSubPhotoSlotsUI();
   itemModal.classList.add("active");
 }
 
 closeItemModal.addEventListener("click", function() { itemModal.classList.remove("active"); });
-
-// Helper internal untuk memproses hingga 3 file foto sekaligus per slot
-function processMultipleFiles(filesList, existingUrlString, maxCount, callback) {
-  maxCount = maxCount || 3;
-  const filesArray = Array.from(filesList || []).slice(0, maxCount);
-
-  if (filesArray.length > 0) {
-    showToast('⏳ Mengolah ' + filesArray.length + ' foto...');
-    const uploadPromises = filesArray.map(function(file) {
-      return new Promise(function(resolve) {
-        compressImageFile(file, 1200, 900, 0.8, function(compressedBase64) {
-          if (!compressedBase64) { resolve(null); return; }
-          uploadImageToAppsScript(compressedBase64, file.name)
-            .then(function(driveUrl) {
-              resolve(driveUrl || compressedBase64);
-            });
-        });
-      });
-    });
-
-    Promise.all(uploadPromises).then(function(urls) {
-      const validUrls = urls.filter(Boolean);
-      callback(validUrls);
-    });
-    return;
-  }
-
-  // Jika memasukkan URL manual (dipisah koma)
-  if (existingUrlString && existingUrlString.trim()) {
-    const urls = existingUrlString.split(',').map(function(s) { return s.trim(); }).filter(Boolean).slice(0, maxCount);
-    callback(urls);
-    return;
-  }
-
-  callback([]);
-}
 
 // Item Submit Handler
 itemForm.addEventListener("submit", function(e) {
@@ -1152,87 +1287,45 @@ itemForm.addEventListener("submit", function(e) {
   const subtitle = document.getElementById("itemSubtitle").value;
   const period = document.getElementById("itemPeriod").value;
   const description = document.getElementById("itemDescription").value;
-  const fileInput = document.getElementById("itemFileInput");
-  var imageUrl = document.getElementById("itemImageUrl").value;
 
-  // Process Sub-Photos (Galeri Foto Tambahan Sisi Kanan)
-  function processSubPhotos(callback) {
-    if (category !== "pengalaman") {
-      callback([]);
-      return;
-    }
+  const fallbackImage = category === 'sertifikat'
+    ? 'https://images.unsplash.com/photo-1589330694653-ded6df03f754?w=600&auto=format&fit=crop&q=80'
+    : 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=600&auto=format&fit=crop&q=80';
 
-    const subRows = Array.from(subPhotosContainer.querySelectorAll(".sub-photo-row"));
-    if (subRows.length === 0) {
-      callback([]);
-      return;
-    }
+  const finalMainImages = (modalMainPhotos && modalMainPhotos.length > 0) ? modalMainPhotos : [fallbackImage];
 
-    const promises = subRows.map(function(row) {
-      return new Promise(function(resolve) {
-        const subFileInput = row.querySelector(".sub-photo-file");
-        const subUrlInput = row.querySelector(".sub-photo-url");
-        const capInput = row.querySelector(".sub-photo-caption");
-        const caption = capInput ? capInput.value.trim() : "";
-        const existingUrlStr = subUrlInput ? subUrlInput.value.trim() : "";
-
-        processMultipleFiles(subFileInput ? subFileInput.files : [], existingUrlStr, 3, function(urls) {
-          if (urls && urls.length > 0) {
-            resolve({
-              image: urls[0],
-              images: urls,
-              caption: caption
-            });
-          } else {
-            resolve(null);
-          }
-        });
-      });
-    });
-
-    Promise.all(promises).then(function(results) {
-      const validGallery = results.filter(function(r) { return r && r.image; });
-      callback(validGallery);
-    });
-  }
-
-  // Selesaikan proses simpan item
-  function handleFinish(mainUrls) {
-    processSubPhotos(function(galleryData) {
-      const fallbackImage = category === 'sertifikat'
-        ? 'https://images.unsplash.com/photo-1589330694653-ded6df03f754?w=600&auto=format&fit=crop&q=80'
-        : 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=600&auto=format&fit=crop&q=80';
-
-      const finalMainImages = (mainUrls && mainUrls.length > 0) ? mainUrls : [fallbackImage];
-
-      const itemData = {
-        id: id,
-        category: category,
-        title: title,
-        subtitle: subtitle,
-        period: period,
-        image: finalMainImages[0],
-        images: finalMainImages,
-        description: description
+  const finalGallery = modalSubSlots
+    .filter(function(s) { return (s.images && s.images.length > 0) || (s.caption && s.caption.trim()); })
+    .map(function(s) {
+      const slotImgs = (s.images && s.images.length > 0) ? s.images : [fallbackImage];
+      return {
+        image: slotImgs[0],
+        images: slotImgs,
+        caption: s.caption || ""
       };
-
-      if (category === "pengalaman") {
-        itemData.gallery = galleryData;
-        itemData.mainCaption = description;
-      }
-
-      finishSaveItem(itemData);
-      if (saveBtn) {
-        saveBtn.disabled = false;
-        saveBtn.innerText = "Simpan ke Portofolio";
-      }
     });
+
+  const itemData = {
+    id: id,
+    category: category,
+    title: title,
+    subtitle: subtitle,
+    period: period,
+    image: finalMainImages[0],
+    images: finalMainImages,
+    description: description
+  };
+
+  if (category === "pengalaman") {
+    itemData.gallery = finalGallery;
+    itemData.mainCaption = description;
   }
 
-  // Olah Foto Utama (hingga 3 foto)
-  processMultipleFiles(fileInput ? fileInput.files : [], imageUrl, 3, function(mainUrls) {
-    handleFinish(mainUrls);
-  });
+  finishSaveItem(itemData);
+  if (saveBtn) {
+    saveBtn.disabled = false;
+    saveBtn.innerText = "Simpan ke Portofolio";
+  }
 });
 
 function finishSaveItem(itemData) {
