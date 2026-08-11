@@ -3,7 +3,7 @@
  */
 
 // Google Apps Script Web App URL
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwdyjavYNqkWfVBSjF94I4Gn0H7X_LANPed4t4xppTzIYlWs-N1f9bvCoyZy9CC3WAv/exec";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxcdlieLa12dQsUJFvF0DzElNPiyxvJk_3xx1wYHtye8TgzukcPBQ9WyvhuYEbK9pk/exec";
 
 // Initial Seed Data
 const DEFAULT_DATA = {
@@ -283,6 +283,130 @@ function renderProfile() {
   }
 }
 
+// Global Carousel Animation Timers Map
+let activeCarouselTimers = new Map();
+
+function startCarouselAnimation(boxEl) {
+  if (!boxEl || activeCarouselTimers.has(boxEl)) return;
+
+  const slides = boxEl.querySelectorAll('.carousel-slide');
+  const dots = boxEl.querySelectorAll('.carousel-dot');
+  if (slides.length <= 1) return;
+
+  let currentIdx = 0;
+
+  function scheduleNextSlide() {
+    // Gambar 1 (awal): Tampil selama 6000ms (6 detik). Gambar 2/3: Tampil 3000ms (3 detik)
+    const delay = currentIdx === 0 ? 6000 : 3000;
+
+    const timerId = setTimeout(function() {
+      slides[currentIdx].classList.remove('active');
+      if (dots[currentIdx]) dots[currentIdx].classList.remove('active');
+
+      currentIdx = (currentIdx + 1) % slides.length;
+
+      slides[currentIdx].classList.add('active');
+      if (dots[currentIdx]) dots[currentIdx].classList.add('active');
+
+      scheduleNextSlide();
+    }, delay);
+
+    activeCarouselTimers.set(boxEl, timerId);
+  }
+
+  scheduleNextSlide();
+}
+
+function stopCarouselAnimation(boxEl) {
+  if (activeCarouselTimers.has(boxEl)) {
+    clearTimeout(activeCarouselTimers.get(boxEl));
+    activeCarouselTimers.delete(boxEl);
+  }
+}
+
+// Observer otomatis untuk memutar/menghentikan slider foto saat pengguna menggeser ke kartu pengalaman
+function initExperienceSliderObserver() {
+  if (!('IntersectionObserver' in window)) return;
+
+  const observer = new IntersectionObserver(function(entries) {
+    entries.forEach(function(entry) {
+      const carouselBoxes = entry.target.querySelectorAll('.auto-carousel-box');
+      if (entry.isIntersecting) {
+        carouselBoxes.forEach(function(box) {
+          startCarouselAnimation(box);
+        });
+      } else {
+        carouselBoxes.forEach(function(box) {
+          stopCarouselAnimation(box);
+        });
+      }
+    });
+  }, { threshold: 0.15 });
+
+  document.querySelectorAll('.exp-card').forEach(function(card) {
+    observer.observe(card);
+  });
+}
+
+// Global click handler untuk membuka gambar yang sedang aktif di Lightbox
+window.handleCarouselClick = function(boxEl, title) {
+  const activeSlide = boxEl.querySelector('.carousel-slide.active') || boxEl.querySelector('.carousel-slide');
+  if (activeSlide && activeSlide.src) {
+    openLightbox(activeSlide.src, title);
+  }
+};
+
+// Generator Markup Slot Foto (Dukungan 1 foto biasa ATAU 2-3 foto dengan Auto-Slideshow & Dots)
+function createImageSlotMarkup(rawImagesData, altTitle, wrapperClass) {
+  let images = [];
+  if (Array.isArray(rawImagesData)) {
+    images = rawImagesData.filter(Boolean);
+  } else if (typeof rawImagesData === 'string' && rawImagesData.trim()) {
+    if (rawImagesData.includes(',')) {
+      images = rawImagesData.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+    } else {
+      images = [rawImagesData.trim()];
+    }
+  }
+
+  // Maksimal 3 foto per slot sesuai permintaan
+  images = images.slice(0, 3);
+
+  if (images.length === 0) {
+    const fallback = 'https://placehold.co/600x400/2a2a35/a0a0b0?text=Foto+Gagal+Dimuat';
+    return '<div class="' + wrapperClass + '" onclick="openLightbox(\'' + fallback + '\', \'' + altTitle + '\')">' +
+             '<img src="' + fallback + '" alt="' + altTitle + '">' +
+           '</div>';
+  }
+
+  if (images.length === 1) {
+    const singleImg = formatDriveUrl(images[0]);
+    return '<div class="' + wrapperClass + '" onclick="openLightbox(\'' + singleImg + '\', \'' + altTitle + '\')">' +
+             '<img src="' + singleImg + '" alt="' + altTitle + '" onerror="this.src=\'https://placehold.co/600x400/2a2a35/a0a0b0?text=Foto+Gagal+Dimuat\'">' +
+           '</div>';
+  }
+
+  // Jika ada 2 atau 3 foto -> buat Carousel HTML dengan titik indikator (dots) & Auto-Slide
+  let slidesHtml = "";
+  let dotsHtml = "";
+  images.forEach(function(imgUrl, idx) {
+    const formattedUrl = formatDriveUrl(imgUrl);
+    const activeClass = idx === 0 ? " active" : "";
+    slidesHtml += '<img src="' + formattedUrl + '" alt="' + altTitle + ' foto ' + (idx + 1) + '" class="carousel-slide' + activeClass + '" data-slide-index="' + idx + '" onerror="this.src=\'https://placehold.co/600x400/2a2a35/a0a0b0?text=Foto+Gagal+Dimuat\'">';
+    dotsHtml += '<span class="carousel-dot' + activeClass + '" data-dot-index="' + idx + '"></span>';
+  });
+
+  const badgeHtml = '<div class="multi-photo-badge"><i data-lucide="layers" style="width:11px;height:11px;"></i> ' + images.length + ' Foto</div>';
+
+  return '<div class="' + wrapperClass + ' auto-carousel-box" data-carousel="true" onclick="handleCarouselClick(this, \'' + altTitle + '\')">' +
+           '<div class="carousel-container">' +
+             slidesHtml +
+             badgeHtml +
+             '<div class="carousel-dots">' + dotsHtml + '</div>' +
+           '</div>' +
+         '</div>';
+}
+
 // Render Card Grid
 function renderGrid() {
   const expGrid = document.getElementById("pengalamanGrid");
@@ -297,7 +421,7 @@ function renderGrid() {
     const card = document.createElement("div");
     card.className = "card";
 
-    const formattedImg = formatDriveUrl(item.image);
+    const formattedImg = formatDriveUrl(item.images ? item.images[0] : item.image);
 
     const adminActions = state.isAdmin ?
       '<div class="card-admin-actions">' +
@@ -306,7 +430,6 @@ function renderGrid() {
       '</div>' : '';
 
     const formattedDesc = item.description ? item.description.replace(/\n/g, '<br>') : '';
-
     const badgeText = item.category === 'pengalaman' ? 'Kegiatan' : 'Sertifikat & Pelatihan';
 
     card.innerHTML =
@@ -326,19 +449,21 @@ function renderGrid() {
       const expCard = document.createElement("div");
       expCard.className = "exp-card";
 
-      const mainImg = formatDriveUrl(item.image);
+      // Memasang slot foto utama (bisa 1, 2, atau 3 foto dengan auto-slideshow)
+      const mainImages = item.images || item.image;
+      const mainImgMarkup = createImageSlotMarkup(mainImages, item.title, "exp-main-img-wrap");
       const mainCap = item.mainCaption || item.description;
 
       let subPhotosHtml = "";
       if (item.gallery && item.gallery.length > 0) {
         item.gallery.forEach(function(g) {
-          const gImg = formatDriveUrl(g.image);
+          const gImages = g.images || g.image;
           const gCap = g.caption || "";
+          const subSlotMarkup = createImageSlotMarkup(gImages, item.title + ' - Foto Kegiatan', "exp-sub-img-wrap");
+
           subPhotosHtml +=
             '<div class="exp-sub-item">' +
-              '<div class="exp-sub-img-wrap" onclick="openLightbox(\'' + gImg + '\', \'' + item.title + ' - Foto Kegiatan\')">' +
-                '<img src="' + gImg + '" alt="Foto Kegiatan" onerror="this.src=\'https://placehold.co/600x400/2a2a35/a0a0b0?text=Foto+Gagal+Dimuat\'">' +
-              '</div>' +
+              subSlotMarkup +
               '<div class="exp-sub-caption">' + gCap + '</div>' +
             '</div>';
         });
@@ -361,9 +486,7 @@ function renderGrid() {
         '<div class="exp-gallery-split">' +
           '<!-- Sisi Kiri: Foto Utama -->' +
           '<div class="exp-main-box">' +
-            '<div class="exp-main-img-wrap" onclick="openLightbox(\'' + mainImg + '\', \'' + item.title + '\')">' +
-              '<img src="' + mainImg + '" alt="' + item.title + '" onerror="this.src=\'https://placehold.co/600x400/2a2a35/a0a0b0?text=Foto+Gagal+Dimuat\'">' +
-            '</div>' +
+            mainImgMarkup +
             '<div class="exp-photo-caption">' + (formattedDesc || mainCap) + '</div>' +
           '</div>' +
           '<!-- Sisi Kanan: Foto-foto Tambahan & Keterangan -->' +
@@ -382,7 +505,10 @@ function renderGrid() {
     }
   });
 
-  // Re-initialize Lucide Icons for added elements
+  // Inisialisasi IntersectionObserver untuk Auto-Slider saat scrolled ke layar
+  initExperienceSliderObserver();
+
+  // Re-initialize Lucide Icons
   if (window.lucide) lucide.createIcons();
 }
 
@@ -900,12 +1026,12 @@ function addSubPhotoRow(imgUrl, caption) {
       '<button type="button" class="btn-card-action delete btn-remove-sub" style="flex:none; padding:2px 8px; font-size:0.75rem;">Hapus</button>' +
     '</div>' +
     '<div>' +
-      '<label class="form-label" style="font-size:0.75rem; margin-bottom:4px;">Upload File Gambar (Langsung dari Komputer/HP):</label>' +
-      '<input type="file" class="form-control sub-photo-file" accept="image/*" style="padding:4px 8px; font-size:0.85rem;">' +
+      '<label class="form-label" style="font-size:0.75rem; margin-bottom:4px;">Upload File Gambar (Pilih 1 s/d 3 Foto sekaligus):</label>' +
+      '<input type="file" class="form-control sub-photo-file" accept="image/*" multiple style="padding:4px 8px; font-size:0.85rem;">' +
     '</div>' +
     '<div>' +
-      '<label class="form-label" style="font-size:0.75rem; margin-bottom:4px;">Atau Link Gambar / Google Drive:</label>' +
-      '<input type="url" class="form-control sub-photo-url" placeholder="https://..." value="' + imgUrl + '">' +
+      '<label class="form-label" style="font-size:0.75rem; margin-bottom:4px;">Atau Link Gambar / Drive (Pisahkan koma jika > 1):</label>' +
+      '<input type="text" class="form-control sub-photo-url" placeholder="https://...1, https://...2" value="' + imgUrl + '">' +
     '</div>' +
     '<div>' +
       '<label class="form-label" style="font-size:0.75rem; margin-bottom:4px;">Keterangan Foto Kegiatan:</label>' +
@@ -950,12 +1076,13 @@ function openItemModal(category, editId) {
       document.getElementById("itemTitle").value = item.title;
       document.getElementById("itemSubtitle").value = item.subtitle;
       document.getElementById("itemPeriod").value = item.period;
-      document.getElementById("itemImageUrl").value = item.image;
+      document.getElementById("itemImageUrl").value = Array.isArray(item.images) ? item.images.join(', ') : (item.image || "");
       document.getElementById("itemDescription").value = item.description;
 
       if (item.category === "pengalaman" && item.gallery && item.gallery.length > 0) {
         item.gallery.forEach(function(g) {
-          addSubPhotoRow(g.image, g.caption);
+          const gUrl = Array.isArray(g.images) ? g.images.join(', ') : (g.image || "");
+          addSubPhotoRow(gUrl, g.caption);
         });
       } else if (item.category === "pengalaman") {
         addSubPhotoRow("", "");
@@ -973,7 +1100,43 @@ function openItemModal(category, editId) {
 
 closeItemModal.addEventListener("click", function() { itemModal.classList.remove("active"); });
 
-// Item Submit Handler (Mendukung Upload Gambar Langsung Komputer/HP & Drive)
+// Helper internal untuk memproses hingga 3 file foto sekaligus per slot
+function processMultipleFiles(filesList, existingUrlString, maxCount, callback) {
+  maxCount = maxCount || 3;
+  const filesArray = Array.from(filesList || []).slice(0, maxCount);
+
+  if (filesArray.length > 0) {
+    showToast('⏳ Mengolah ' + filesArray.length + ' foto...');
+    const uploadPromises = filesArray.map(function(file) {
+      return new Promise(function(resolve) {
+        compressImageFile(file, 1200, 900, 0.8, function(compressedBase64) {
+          if (!compressedBase64) { resolve(null); return; }
+          uploadImageToAppsScript(compressedBase64, file.name)
+            .then(function(driveUrl) {
+              resolve(driveUrl || compressedBase64);
+            });
+        });
+      });
+    });
+
+    Promise.all(uploadPromises).then(function(urls) {
+      const validUrls = urls.filter(Boolean);
+      callback(validUrls);
+    });
+    return;
+  }
+
+  // Jika memasukkan URL manual (dipisah koma)
+  if (existingUrlString && existingUrlString.trim()) {
+    const urls = existingUrlString.split(',').map(function(s) { return s.trim(); }).filter(Boolean).slice(0, maxCount);
+    callback(urls);
+    return;
+  }
+
+  callback([]);
+}
+
+// Item Submit Handler
 itemForm.addEventListener("submit", function(e) {
   e.preventDefault();
 
@@ -992,7 +1155,7 @@ itemForm.addEventListener("submit", function(e) {
   const fileInput = document.getElementById("itemFileInput");
   var imageUrl = document.getElementById("itemImageUrl").value;
 
-  // Process Sub-Photos (File uploads & URLs)
+  // Process Sub-Photos (Galeri Foto Tambahan Sisi Kanan)
   function processSubPhotos(callback) {
     if (category !== "pengalaman") {
       callback([]);
@@ -1011,39 +1174,19 @@ itemForm.addEventListener("submit", function(e) {
         const subUrlInput = row.querySelector(".sub-photo-url");
         const capInput = row.querySelector(".sub-photo-caption");
         const caption = capInput ? capInput.value.trim() : "";
-        const existingUrl = subUrlInput ? subUrlInput.value.trim() : "";
+        const existingUrlStr = subUrlInput ? subUrlInput.value.trim() : "";
 
-        if (subFileInput && subFileInput.files && subFileInput.files[0]) {
-          const file = subFileInput.files[0];
-          compressImageFile(file, 1000, 750, 0.8, function(compressedBase64) {
-            const base64Data = compressedBase64 || existingUrl;
-            if (typeof google !== 'undefined' && google.script && google.script.run) {
-              // Di dalam Google Apps Script environment
-              google.script.run
-                .withSuccessHandler(function(driveUrl) { resolve({ image: driveUrl, caption: caption }); })
-                .withFailureHandler(function(err) {
-                  console.warn('Sub photo drive upload via GAS gagal, fallback base64:', err);
-                  resolve({ image: base64Data, caption: caption });
-                })
-                .uploadFileToDrive(base64Data, file.name, { category: 'sub-photo', title: title });
-            } else {
-              // Di GitHub Pages / external web: upload via fetch ke GAS Web App
-              uploadImageToAppsScript(base64Data, file.name)
-                .then(function(driveUrl) {
-                  if (driveUrl) {
-                    resolve({ image: driveUrl, caption: caption });
-                  } else {
-                    console.warn('[Portfolio] Sub photo gagal upload ke Drive, fallback base64.');
-                    resolve({ image: base64Data, caption: caption });
-                  }
-                });
-            }
-          });
-        } else if (existingUrl) {
-          resolve({ image: existingUrl, caption: caption });
-        } else {
-          resolve(null);
-        }
+        processMultipleFiles(subFileInput ? subFileInput.files : [], existingUrlStr, 3, function(urls) {
+          if (urls && urls.length > 0) {
+            resolve({
+              image: urls[0],
+              images: urls,
+              caption: caption
+            });
+          } else {
+            resolve(null);
+          }
+        });
       });
     });
 
@@ -1053,21 +1196,31 @@ itemForm.addEventListener("submit", function(e) {
     });
   }
 
-  function handleFinish(finalImgUrl) {
+  // Selesaikan proses simpan item
+  function handleFinish(mainUrls) {
     processSubPhotos(function(galleryData) {
+      const fallbackImage = category === 'sertifikat'
+        ? 'https://images.unsplash.com/photo-1589330694653-ded6df03f754?w=600&auto=format&fit=crop&q=80'
+        : 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=600&auto=format&fit=crop&q=80';
+
+      const finalMainImages = (mainUrls && mainUrls.length > 0) ? mainUrls : [fallbackImage];
+
       const itemData = {
         id: id,
         category: category,
         title: title,
         subtitle: subtitle,
         period: period,
-        image: finalImgUrl,
+        image: finalMainImages[0],
+        images: finalMainImages,
         description: description
       };
+
       if (category === "pengalaman") {
         itemData.gallery = galleryData;
         itemData.mainCaption = description;
       }
+
       finishSaveItem(itemData);
       if (saveBtn) {
         saveBtn.disabled = false;
@@ -1076,43 +1229,10 @@ itemForm.addEventListener("submit", function(e) {
     });
   }
 
-  // Process Main File Upload jika user memilih file foto utama
-  if (fileInput.files && fileInput.files[0]) {
-    const file = fileInput.files[0];
-    compressImageFile(file, 1200, 900, 0.8, function(compressedBase64) {
-      const base64Data = compressedBase64 || imageUrl;
-      if (typeof google !== 'undefined' && google.script && google.script.run) {
-        // Di dalam Google Apps Script environment
-        google.script.run
-          .withSuccessHandler(function(driveUrl) { handleFinish(driveUrl); })
-          .withFailureHandler(function(err) {
-            console.warn('Drive upload main foto via GAS gagal, fallback base64:', err);
-            handleFinish(base64Data);
-          })
-          .uploadFileToDrive(base64Data, file.name, { category: category, title: title });
-      } else {
-        // Di GitHub Pages / external web: upload via fetch ke GAS Web App
-        showToast('⏳ Mengupload gambar ke Google Drive...');
-        uploadImageToAppsScript(base64Data, file.name)
-          .then(function(driveUrl) {
-            if (driveUrl) {
-              handleFinish(driveUrl);
-            } else {
-              console.warn('[Portfolio] Gambar gagal upload ke Drive, menyimpan base64 sebagai fallback.');
-              handleFinish(base64Data);
-            }
-          });
-      }
-    });
-    return;
-  }
-
-  // Gunakan placeholder jika tidak ada gambar (tidak memblokir penyimpanan)
-  const fallbackImage = category === 'sertifikat'
-    ? 'https://images.unsplash.com/photo-1589330694653-ded6df03f754?w=600&auto=format&fit=crop&q=80'
-    : 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=600&auto=format&fit=crop&q=80';
-
-  handleFinish(imageUrl || fallbackImage);
+  // Olah Foto Utama (hingga 3 foto)
+  processMultipleFiles(fileInput ? fileInput.files : [], imageUrl, 3, function(mainUrls) {
+    handleFinish(mainUrls);
+  });
 });
 
 function finishSaveItem(itemData) {
